@@ -93,7 +93,7 @@
 const { useState, useEffect, useMemo, useCallback, useContext, createContext } = React;
 
 // ========================================
-// BASE DE DATOS (IndexedDB con Dexie.js)
+// BASE DE DATOS (IndexedDB con Dexie.js) - ÚNICA INSTANCIA
 // ========================================
 const DB_VERSION = 6;
 const db = new Dexie('LoansW_DB');
@@ -237,39 +237,113 @@ const IconSVG = {
     Camera: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>,
 };
 
+// ========================================
+// CONTEXTO GLOBAL - FUENTE ÚNICA DE VERDAD (CORREGIDO)
+// ========================================
 const AppContext = createContext();
 const AppProvider = ({ children, user, onLogout }) => {
-    const [clients, setClients] = useState([]); const [loans, setLoans] = useState([]); const [installments, setInstallments] = useState([]);
-    const [payments, setPayments] = useState([]); const [expenses, setExpenses] = useState([]); const [capitalMovements, setCapitalMovements] = useState([]);
-    const [expenseCategories, setExpenseCategories] = useState([]); const [collectionPeriods, setCollectionPeriods] = useState([]);
-    const [auditLogs, setAuditLogs] = useState([]); const [config, setConfig] = useState(null); const [toasts, setToasts] = useState([]);
-    const [loading, setLoading] = useState(true); const [refreshKey, setRefreshKey] = useState(0);
+    const [clients, setClients] = useState([]);
+    const [loans, setLoans] = useState([]);
+    const [installments, setInstallments] = useState([]);
+    const [payments, setPayments] = useState([]);
+    const [expenses, setExpenses] = useState([]);
+    const [capitalMovements, setCapitalMovements] = useState([]);
+    const [expenseCategories, setExpenseCategories] = useState([]);
+    const [collectionPeriods, setCollectionPeriods] = useState([]);
+    const [auditLogs, setAuditLogs] = useState([]);
+    const [config, setConfig] = useState(null);
+    const [toasts, setToasts] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [refreshKey, setRefreshKey] = useState(0);
 
-    const addToast = useCallback((msg, type = 'info') => { const id = Date.now(); setToasts(p => [...p, { id, msg, type }]); setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 3500); }, []);
+    const addToast = useCallback((msg, type = 'info') => {
+        const id = Date.now(); setToasts(p => [...p, { id, msg, type }]);
+        setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 3500);
+    }, []);
 
+    // Función central para recargar TODOS los datos desde Dexie
     const refreshAllData = useCallback(async () => {
-        if (!user?.id) return; setLoading(true);
+        if (!user?.id) return;
+        setLoading(true);
         try {
-            await initDatabase(); const userId = user.id;
-            const [c, l, ec, cp, al] = await Promise.all([db.clients.where({ userId }).toArray(), db.loans.where({ userId }).toArray(), db.expenseCategories.toArray(), db.collectionPeriods.where({ userId }).toArray(), db.auditLog.where({ userId }).orderBy('timestamp').reverse().limit(50).toArray()]);
-            const loanIds = l.map(loan => loan.id); let i = [], p = [];
-            if (loanIds.length > 0) { i = await db.installments.where('loanId').anyOf(loanIds).toArray(); p = await db.payments.where('loanId').anyOf(loanIds).toArray(); }
-            const [e, cm, cfg] = await Promise.all([db.expenses.where({ userId }).toArray(), db.capitalMovements.where({ userId }).toArray(), db.settings.get(userId)]);
-            setClients(c); setLoans(l); setInstallments(i); setPayments(p); setExpenses(e); setCapitalMovements(cm); setExpenseCategories(ec); setCollectionPeriods(cp); setAuditLogs(al);
-            setConfig(cfg || {}); setRefreshKey(k => k + 1);
-            for (const inst of i) { if (inst.status === 'paid' || inst.status === 'cancelled') continue; const loan = l.find(lo => lo.id === inst.loanId); if (loan) { const daysLate = MoraEngine.calculateMoraDays(inst.dueDate); const moraAmount = MoraEngine.calculateMoraAmount({ remainingAmount: inst.remainingAmount || inst.totalAmount, moraType: loan.moraType, moraRate: loan.moraRate, daysLate }); if (daysLate !== inst.moraDays || moraAmount !== inst.moraAmount) { await db.installments.update(inst.id, { moraDays: daysLate, moraAmount }); if (daysLate > 0 && inst.status !== 'paid' && inst.status !== 'cancelled' && inst.status !== 'partial') await db.installments.update(inst.id, { status: 'overdue' }); } } }
+            console.log('[REFRESH] Iniciando carga de datos para usuario:', user.id);
+            await initDatabase();
+            const userId = user.id;
+            
+            const [c, l, ec, cp, al] = await Promise.all([
+                db.clients.where({ userId }).toArray(),
+                db.loans.where({ userId }).toArray(),
+                db.expenseCategories.toArray(),
+                db.collectionPeriods.where({ userId }).toArray(),
+                db.auditLog.where({ userId }).orderBy('timestamp').reverse().limit(50).toArray()
+            ]);
+            
+            const loanIds = l.map(loan => loan.id);
+            let i = [], p = [];
+            if (loanIds.length > 0) {
+                i = await db.installments.where('loanId').anyOf(loanIds).toArray();
+                p = await db.payments.where('loanId').anyOf(loanIds).toArray();
+            }
+            
+            const [e, cm, cfg] = await Promise.all([
+                db.expenses.where({ userId }).toArray(),
+                db.capitalMovements.where({ userId }).toArray(),
+                db.settings.get(userId)
+            ]);
+            
+            setClients(c); setLoans(l); setInstallments(i); setPayments(p);
+            setExpenses(e); setCapitalMovements(cm); setExpenseCategories(ec);
+            setCollectionPeriods(cp); setAuditLogs(al);
+            setConfig(cfg || {});
+            setRefreshKey(k => k + 1);
+            
+            console.log('[REFRESH] Datos cargados:', { clients: c.length, loans: l.length, expenses: e.length, categories: ec.length });
+            
+            // Actualizar mora
+            for (const inst of i) {
+                if (inst.status === 'paid' || inst.status === 'cancelled') continue;
+                const loan = l.find(lo => lo.id === inst.loanId);
+                if (loan) {
+                    const daysLate = MoraEngine.calculateMoraDays(inst.dueDate);
+                    const moraAmount = MoraEngine.calculateMoraAmount({ remainingAmount: inst.remainingAmount || inst.totalAmount, moraType: loan.moraType, moraRate: loan.moraRate, daysLate });
+                    if (daysLate !== inst.moraDays || moraAmount !== inst.moraAmount) {
+                        await db.installments.update(inst.id, { moraDays: daysLate, moraAmount });
+                        if (daysLate > 0 && inst.status !== 'paid' && inst.status !== 'cancelled' && inst.status !== 'partial')
+                            await db.installments.update(inst.id, { status: 'overdue' });
+                    }
+                }
+            }
         } catch (err) { console.error('[APP] Error refresh:', err); }
         setLoading(false);
     }, [user]);
 
-    const addAuditLog = useCallback(async (entityType, entityId, action, description = '') => { if (!user?.id) return; try { await db.auditLog.add({ userId: user.id, timestamp: new Date().toISOString(), entityType, entityId, action, description }); } catch (err) { console.error('[APP] Audit log error:', err); } }, [user]);
+    const addAuditLog = useCallback(async (entityType, entityId, action, description = '') => {
+        if (!user?.id) return;
+        try { await db.auditLog.add({ userId: user.id, timestamp: new Date().toISOString(), entityType, entityId, action, description }); } catch (err) { console.error('[APP] Audit log error:', err); }
+    }, [user]);
+
     useEffect(() => { if (user) refreshAllData(); }, [user, refreshAllData]);
 
-    const value = useMemo(() => ({ user, onLogout, clients, loans, installments, payments, expenses, capitalMovements, expenseCategories, setExpenseCategories, collectionPeriods, auditLogs, config, setConfig, toasts, addToast, loading, refreshKey, refreshAllData, addAuditLog }), [user, onLogout, clients, loans, installments, payments, expenses, capitalMovements, expenseCategories, collectionPeriods, auditLogs, config, toasts, addToast, loading, refreshKey, refreshAllData, addAuditLog]);
+    // CORREGIDO: setExpenseCategories AHORA SÍ está incluido en el value
+    const value = useMemo(() => ({
+        user, onLogout,
+        clients, loans, installments, payments,
+        expenses, capitalMovements,
+        expenseCategories, setExpenseCategories,
+        collectionPeriods, auditLogs,
+        config, setConfig,
+        toasts, addToast,
+        loading, refreshKey,
+        refreshAllData, addAuditLog
+    }), [user, onLogout, clients, loans, installments, payments, expenses, capitalMovements, expenseCategories, collectionPeriods, auditLogs, config, toasts, addToast, loading, refreshKey, refreshAllData, addAuditLog]);
+
     return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 };
 const useApp = () => useContext(AppContext);
 
+// ========================================
+// COMPONENTES UI
+// ========================================
 const ToastContainer = () => { const { toasts } = useApp(); if (!toasts.length) return null; return <div className="toast-container">{toasts.map(t => <div key={t.id} className={`toast toast-${t.type}`}>{t.msg}</div>)}</div>; };
 const BottomNav = ({ page, onNavigate }) => { const items = [{ id: 'dashboard', label: 'Inicio', icon: <IconSVG.Home /> },{ id: 'clients', label: 'Clientes', icon: <IconSVG.Users /> },{ id: 'loans', label: 'Préstamos', icon: <IconSVG.Briefcase /> },{ id: 'collections', label: 'Cobros', icon: <IconSVG.Receipt /> },{ id: 'finance', label: 'Finanzas', icon: <IconSVG.TrendingUp /> },{ id: 'more', label: 'Más', icon: <IconSVG.MoreHorizontal /> }]; return <div className="bottom-nav">{items.map(item => <button key={item.id} className={`nav-item ${page === item.id ? 'active' : ''}`} onClick={() => onNavigate(item.id)}>{item.icon}<span>{item.label}</span></button>)}</div>; };
 const FAB = ({ onAction }) => { const [open, setOpen] = useState(false); const actions = [{ id: 'client', label: 'Nuevo cliente', icon: <IconSVG.User /> },{ id: 'loan', label: 'Nuevo préstamo', icon: <IconSVG.DollarSign /> },{ id: 'payment', label: 'Registrar cobro', icon: <IconSVG.Check /> },{ id: 'expense', label: 'Registrar gasto', icon: <IconSVG.TrendingUp /> },{ id: 'capital', label: 'Mov. de capital', icon: <IconSVG.Wallet /> }]; return (<>{open && <div className="fab-overlay" onClick={() => setOpen(false)} />}{open && <div className="fab-menu">{actions.map((a, i) => <button key={a.id} className="fab-menu-item" style={{ animationDelay: `${i * 0.04}s` }} onClick={() => { setOpen(false); setTimeout(() => onAction(a.id), 100); }}>{a.icon}<span>{a.label}</span></button>)}</div>}<button className="fab" onClick={() => setOpen(!open)} style={{ transform: open ? 'rotate(45deg)' : 'rotate(0)' }}><IconSVG.Plus /></button></>); };
@@ -280,7 +354,7 @@ const SkeletonCard = () => <div className="skeleton" style={{ height: '80px', ma
 
 // ===== FIN DE LA PARTE 1 =====
 // CONTINUARÁ PARTE 2 AQUÍ
-// ========================================
+    // ========================================
         // PANTALLA DE AUTENTICACIÓN
         // ========================================
         const LoginScreen = ({ onLogin }) => {
@@ -290,11 +364,10 @@ const SkeletonCard = () => <div className="skeleton" style={{ height: '80px', ma
         };
 
         // ========================================
-        // DASHBOARD (con sincronización automática)
+        // DASHBOARD
         // ========================================
         const DashboardPage = ({ onNavigate }) => {
-            const { loans, installments, payments, expenses, capitalMovements, clients, auditLogs, loading, refreshKey } = useApp();
-            const now = new Date();
+            const { loans, installments, payments, expenses, capitalMovements, clients, auditLogs, loading, refreshKey } = useApp(); const now = new Date();
             const metrics = useMemo(() => FinanceEngine.calculateMetrics({ installments, payments, loans, expenses, capitalMovements, year: now.getFullYear(), month: now.getMonth() + 1 }), [installments, payments, loans, expenses, capitalMovements, refreshKey]);
             const upcomingCollections = useMemo(() => { const today = new Date(); today.setHours(0,0,0,0); const nw = new Date(today); nw.setDate(nw.getDate() + 7); return installments.filter(i => { if (i.status === 'paid' || i.status === 'cancelled') return false; const due = new Date(i.dueDate); due.setHours(0,0,0,0); return due >= today && due <= nw; }).sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate)).slice(0, 5); }, [installments, refreshKey]);
             const alerts = useMemo(() => { const a = []; const oc = installments.filter(i => i.status === 'overdue').length; if (oc > 0) a.push({ type: 'danger', msg: `${oc} cuotas vencidas`, icon: <IconSVG.Clock /> }); const tm = installments.filter(i => i.status === 'overdue').reduce((s, i) => s + (i.moraAmount || 0), 0); if (tm > 0) a.push({ type: 'danger', msg: `Mora acumulada: ${formatCurrency(tm)}`, icon: <IconSVG.AlertTriangle /> }); return a; }, [installments, refreshKey]);
@@ -305,12 +378,40 @@ const SkeletonCard = () => <div className="skeleton" style={{ height: '80px', ma
         };
 
         // ========================================
-        // CLIENTES
+        // CLIENTES (CORREGIDO - persistencia verificada)
         // ========================================
         const ClientsPage = ({ onNavigate }) => {
             const { clients, loans, refreshAllData, addToast, user, loading } = useApp(); const [search, setSearch] = useState(''); const [showForm, setShowForm] = useState(false); const [editing, setEditing] = useState(null);
             const filtered = clients.filter(c => (c.fullName || '').toLowerCase().includes(search.toLowerCase()) || (c.document || '').includes(search));
-            const handleSave = async (data) => { if (!data.fullName?.trim()) { addToast('El nombre es requerido', 'error'); return; } try { await initDatabase(); const docData = { ...data, userId: user.id, updatedAt: new Date().toISOString() }; let savedId; if (editing) { await db.clients.update(editing.id, docData); savedId = editing.id; } else { docData.createdAt = new Date().toISOString(); savedId = await db.clients.add(docData); } await verifyPersistence(db.clients, savedId); await refreshAllData(); addToast(editing ? 'Cliente actualizado correctamente' : 'Cliente creado correctamente', 'success'); setShowForm(false); setEditing(null); } catch (err) { addToast(err.message || 'No se pudo guardar el cliente.', 'error'); } };
+            const handleSave = async (data) => {
+                if (!data.fullName?.trim()) { addToast('El nombre es requerido', 'error'); return; }
+                try {
+                    console.log('[CLIENT] Iniciando guardado...');
+                    await initDatabase();
+                    const docData = { ...data, userId: user.id, updatedAt: new Date().toISOString() };
+                    let savedId;
+                    if (editing) {
+                        await db.clients.update(editing.id, docData);
+                        savedId = editing.id;
+                        console.log('[CLIENT] Actualizado ID:', savedId);
+                    } else {
+                        docData.createdAt = new Date().toISOString();
+                        savedId = await db.clients.add(docData);
+                        console.log('[CLIENT] Creado ID:', savedId);
+                    }
+                    // Verificar persistencia
+                    const verified = await verifyPersistence(db.clients, savedId);
+                    console.log('[CLIENT] Verificado en DB:', verified.fullName);
+                    // Recargar todos los datos
+                    await refreshAllData();
+                    console.log('[CLIENT] Estado global actualizado');
+                    addToast(editing ? 'Cliente actualizado correctamente' : 'Cliente creado correctamente', 'success');
+                    setShowForm(false); setEditing(null);
+                } catch (err) {
+                    console.error('[CLIENT ERROR]', err);
+                    addToast(err.message || 'No se pudo guardar el cliente.', 'error');
+                }
+            };
             if (loading) return <div style={{ padding: '20px' }}>{[1,2,3].map(i => <SkeletonCard key={i} />)}</div>;
             return (<div style={{ padding: '20px', paddingBottom: '120px' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}><div style={{ fontSize: '26px', fontWeight: '700' }}>Clientes</div><button className="btn btn-primary btn-sm" onClick={() => { setEditing(null); setShowForm(true); }}><IconSVG.Plus /> Nuevo</button></div><div style={{ position: 'relative', marginBottom: '14px' }}><span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}><IconSVG.Search /></span><input type="text" placeholder="Buscar clientes..." value={search} onChange={e => setSearch(e.target.value)} className="glass-input" style={{ paddingLeft: '38px' }} /></div>{filtered.length === 0 ? <EmptyState icon={<IconSVG.Users />} title="No hay clientes" description="Comienza agregando tu primer cliente" action={<button className="btn btn-primary" onClick={() => { setEditing(null); setShowForm(true); }}>+ Agregar cliente</button>} /> : filtered.map(c => { const clientLoans = loans.filter(l => l.clientId === c.id); const activeCount = clientLoans.filter(l => l.status === 'active').length; return <div key={c.id} className="glass-card" onClick={() => onNavigate('clientDetail', c.id)} style={{ padding: '14px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}><div style={{ width: '42px', height: '42px', borderRadius: '50%', background: 'linear-gradient(135deg, #6366f1, #4f46e5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', fontWeight: '700', color: 'white', flexShrink: 0 }}>{(c.fullName || '?')[0].toUpperCase()}</div><div style={{ flex: 1, minWidth: 0 }}><div className="truncate" style={{ fontWeight: '600', fontSize: '14px' }}>{c.fullName}</div><div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{c.document}</div></div><div style={{ textAlign: 'right', flexShrink: 0 }}><div style={{ fontSize: '12px', fontWeight: '600', color: activeCount > 0 ? 'var(--success)' : 'var(--text-muted)' }}>{activeCount} activos</div></div></div>; })}{showForm && <div className="modal-overlay" onClick={() => setShowForm(false)}><div className="modal-content" onClick={e => e.stopPropagation()}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}><div style={{ fontSize: '20px', fontWeight: '700' }}>{editing ? 'Editar cliente' : 'Nuevo cliente'}</div><button onClick={() => setShowForm(false)} className="btn btn-ghost btn-sm"><IconSVG.X /></button></div><ClientForm initial={editing} onSave={handleSave} /></div></div>}</div>);
         };
@@ -321,7 +422,7 @@ const SkeletonCard = () => <div className="skeleton" style={{ height: '80px', ma
             const { clients, loans, refreshAllData, addToast, user } = useApp(); const [showEdit, setShowEdit] = useState(false); const client = clients.find(c => c.id === parseInt(id));
             if (!client) return <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>Cliente no encontrado</div>;
             const clientLoans = loans.filter(l => l.clientId === client.id); const totalLent = clientLoans.reduce((s, l) => s + (l.principal || 0), 0); const totalPending = clientLoans.filter(l => l.status === 'active').reduce((s, l) => s + (l.currentBalance || 0), 0); const activeLoans = clientLoans.filter(l => l.status === 'active');
-            const handleUpdate = async (data) => { try { await db.clients.update(parseInt(id), { ...data, updatedAt: new Date().toISOString() }); await verifyPersistence(db.clients, parseInt(id)); await refreshAllData(); addToast('Cliente actualizado correctamente', 'success'); setShowEdit(false); } catch (err) { addToast('Error al actualizar.', 'error'); } };
+            const handleUpdate = async (data) => { try { console.log('[CLIENT] Actualizando:', id); await db.clients.update(parseInt(id), { ...data, updatedAt: new Date().toISOString() }); await verifyPersistence(db.clients, parseInt(id)); await refreshAllData(); addToast('Cliente actualizado correctamente', 'success'); setShowEdit(false); } catch (err) { console.error('[CLIENT ERROR]', err); addToast('Error al actualizar.', 'error'); } };
             const handleDelete = async () => { try { if (clientLoans.length > 0) { addToast('No se puede eliminar: tiene préstamos asociados.', 'error'); return; } await db.clients.delete(parseInt(id)); await refreshAllData(); addToast('Cliente eliminado', 'success'); onNavigate('clients'); } catch { addToast('Error al eliminar.', 'error'); } };
             return (<div style={{ padding: '20px', paddingBottom: '120px' }}><button onClick={() => onNavigate('clients')} className="back-btn"><IconSVG.ArrowLeft /> Volver</button><div className="glass-card" style={{ padding: '20px', marginBottom: '14px' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}><div className="flex-center gap-3"><div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'linear-gradient(135deg, #6366f1, #4f46e5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: '700', color: 'white', flexShrink: 0 }}>{(client.fullName || '?')[0].toUpperCase()}</div><div><div style={{ fontSize: '20px', fontWeight: '700' }}>{client.fullName}</div><div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{client.document} · {client.phone}</div>{client.email && <div style={{ fontSize: '11px', color: 'var(--accent-light)' }}>{client.email}</div>}</div></div><div style={{ display: 'flex', gap: '6px' }}><button className="btn btn-ghost btn-sm" onClick={() => setShowEdit(true)}><IconSVG.Edit3 /> Editar</button><button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }} onClick={handleDelete}><IconSVG.Trash2 /></button></div></div>{(client.address || client.city || client.neighborhood) && <div style={{ marginTop: '14px', padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', fontSize: '12px', color: 'var(--text-secondary)' }}>{client.address && <div><IconSVG.MapPin /> {client.address}{client.neighborhood ? `, ${client.neighborhood}` : ''}{client.city ? `, ${client.city}` : ''}</div>}{client.company && <div style={{ marginTop: '4px' }}><IconSVG.Building /> {client.company}{client.occupation ? ` — ${client.occupation}` : ''}</div>}{client.references && <div style={{ marginTop: '4px' }}>Ref: {client.references}</div>}{client.notes && <div style={{ marginTop: '4px', fontStyle: 'italic' }}>{client.notes}</div>}</div>}</div><div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '14px' }}><div className="glass-card" style={{ padding: '12px', textAlign: 'center' }}><div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total prestado</div><div style={{ fontSize: '17px', fontWeight: '700' }}>{formatCurrency(totalLent)}</div></div><div className="glass-card" style={{ padding: '12px', textAlign: 'center' }}><div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Pendiente</div><div style={{ fontSize: '17px', fontWeight: '700', color: 'var(--warning)' }}>{formatCurrency(totalPending)}</div></div><div className="glass-card" style={{ padding: '12px', textAlign: 'center' }}><div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Préstamos activos</div><div style={{ fontSize: '17px', fontWeight: '700' }}>{activeLoans.length}</div></div><div className="glass-card" style={{ padding: '12px', textAlign: 'center' }}><div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total préstamos</div><div style={{ fontSize: '17px', fontWeight: '700' }}>{clientLoans.length}</div></div></div><div style={{ fontSize: '15px', fontWeight: '600', marginBottom: '10px' }}>Préstamos del cliente</div>{clientLoans.length === 0 ? <EmptyState icon={<IconSVG.Briefcase />} title="Sin préstamos" action={<button className="btn btn-primary btn-sm" onClick={() => onNavigate('createLoan', client.id)}>+ Nuevo préstamo</button>} /> : clientLoans.map(loan => { const prog = loan.totalRepayment > 0 ? ((loan.totalPaid || 0) / loan.totalRepayment) * 100 : 0; return <div key={loan.id} className="glass-card" onClick={() => onNavigate('loanDetail', loan.id)} style={{ padding: '14px', marginBottom: '6px' }}><div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}><span style={{ fontWeight: '600' }}>#{loan.loanNumber}</span><span className={`badge ${loan.status === 'overdue' ? 'badge-danger' : loan.status === 'finished' ? 'badge-info' : 'badge-success'}`}>{getStatusLabel(loan.status)}</span></div><div className="progress-bar" style={{ marginBottom: '6px' }}><div className="progress-fill" style={{ width: `${Math.min(100, prog)}%` }} /></div><div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{formatCurrency(loan.totalPaid || 0)} / {formatCurrency(loan.totalRepayment)}</div></div>; })}{showEdit && <div className="modal-overlay" onClick={() => setShowEdit(false)}><div className="modal-content" onClick={e => e.stopPropagation()}><div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}><div style={{ fontSize: '20px', fontWeight: '700' }}>Editar cliente</div><button onClick={() => setShowEdit(false)} className="btn btn-ghost btn-sm"><IconSVG.X /></button></div><ClientForm initial={client} onSave={handleUpdate} /></div></div>}</div>);
         };
@@ -333,14 +434,37 @@ const SkeletonCard = () => <div className="skeleton" style={{ height: '80px', ma
 
         const CreateLoanPage = ({ onNavigate, preselectedClientId }) => {
             const { clients, refreshAllData, addToast, user } = useApp(); const [form, setForm] = useState({ clientId: preselectedClientId || '', principal: '', interestType: 'on_principal', interestRate: '20', installmentsCount: '5', frequency: 'monthly', startDate: new Date().toISOString().split('T')[0], dueDateType: 'fixed_day', moraType: 'percentage_daily', moraRate: '0.5' }); const uf = (f, v) => setForm(p => ({ ...p, [f]: v }));
-            const handleCreate = async () => { if (!form.clientId || !form.principal || !form.interestRate || !form.installmentsCount) { addToast('Completa todos los campos requeridos', 'error'); return; } const count = parseInt(form.installmentsCount); if (count <= 0 || count > 120) { addToast('Número de cuotas inválido', 'error'); return; } try { await initDatabase(); const r = InterestEngine.calculate({ principal: parseFloat(form.principal), rate: parseFloat(form.interestRate), count, type: form.interestType }); const s = ScheduleEngine.generate({ startDate: form.startDate, frequency: form.frequency, count, dueDateType: form.dueDateType }); const ld = { userId: user.id, clientId: parseInt(form.clientId), loanNumber: `LW-${Date.now().toString(36).toUpperCase()}`, principal: parseFloat(form.principal), interestType: form.interestType, interestRate: parseFloat(form.interestRate), installmentsCount: count, frequency: form.frequency, startDate: form.startDate, dueDateType: form.dueDateType, moraType: form.moraType, moraRate: parseFloat(form.moraRate), status: 'active', totalRepayment: r.totalRepayment, totalPaid: 0, currentBalance: r.totalRepayment, progress: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }; let lid; await db.transaction('rw', db.loans, db.installments, db.capitalMovements, async () => { lid = await db.loans.add(ld); const id = s.map((d, i) => ({ loanId: lid, number: i + 1, startDate: i === 0 ? form.startDate : s[i - 1].toISOString(), dueDate: d.toISOString(), principal: r.details[i].principal, interest: r.details[i].interest, totalAmount: r.details[i].total, paidAmount: 0, remainingAmount: r.details[i].total, moraDays: 0, moraAmount: 0, status: 'pending' })); await db.installments.bulkAdd(id); await db.capitalMovements.add({ userId: user.id, type: 'loan', amount: parseFloat(form.principal), date: new Date().toISOString(), description: `Préstamo ${ld.loanNumber}`, createdAt: new Date().toISOString() }); }); await verifyPersistence(db.loans, lid); await refreshAllData(); addToast('Préstamo creado exitosamente', 'success'); onNavigate('loanDetail', lid); } catch (err) { addToast(err.message || 'No se pudo crear el préstamo.', 'error'); } };
+            const handleCreate = async () => {
+                if (!form.clientId || !form.principal || !form.interestRate || !form.installmentsCount) { addToast('Completa todos los campos requeridos', 'error'); return; }
+                const count = parseInt(form.installmentsCount); if (count <= 0 || count > 120) { addToast('Número de cuotas inválido', 'error'); return; }
+                try {
+                    console.log('[LOAN] Iniciando creación...');
+                    await initDatabase();
+                    const r = InterestEngine.calculate({ principal: parseFloat(form.principal), rate: parseFloat(form.interestRate), count, type: form.interestType });
+                    const s = ScheduleEngine.generate({ startDate: form.startDate, frequency: form.frequency, count, dueDateType: form.dueDateType });
+                    const ld = { userId: user.id, clientId: parseInt(form.clientId), loanNumber: `LW-${Date.now().toString(36).toUpperCase()}`, principal: parseFloat(form.principal), interestType: form.interestType, interestRate: parseFloat(form.interestRate), installmentsCount: count, frequency: form.frequency, startDate: form.startDate, dueDateType: form.dueDateType, moraType: form.moraType, moraRate: parseFloat(form.moraRate), status: 'active', totalRepayment: r.totalRepayment, totalPaid: 0, currentBalance: r.totalRepayment, progress: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+                    let lid;
+                    await db.transaction('rw', db.loans, db.installments, db.capitalMovements, async () => {
+                        lid = await db.loans.add(ld);
+                        const id = s.map((d, i) => ({ loanId: lid, number: i + 1, startDate: i === 0 ? form.startDate : s[i - 1].toISOString(), dueDate: d.toISOString(), principal: r.details[i].principal, interest: r.details[i].interest, totalAmount: r.details[i].total, paidAmount: 0, remainingAmount: r.details[i].total, moraDays: 0, moraAmount: 0, status: 'pending' }));
+                        await db.installments.bulkAdd(id);
+                        await db.capitalMovements.add({ userId: user.id, type: 'loan', amount: parseFloat(form.principal), date: new Date().toISOString(), description: `Préstamo ${ld.loanNumber}`, createdAt: new Date().toISOString() });
+                    });
+                    console.log('[LOAN] Transacción completada, ID:', lid);
+                    await verifyPersistence(db.loans, lid);
+                    await refreshAllData();
+                    console.log('[LOAN] Estado actualizado');
+                    addToast('Préstamo creado exitosamente', 'success');
+                    onNavigate('loanDetail', lid);
+                } catch (err) { console.error('[LOAN ERROR]', err); addToast(err.message || 'No se pudo crear el préstamo.', 'error'); }
+            };
             return (<div style={{ padding: '20px', paddingBottom: '120px' }}><button onClick={() => onNavigate('loans')} className="back-btn"><IconSVG.ArrowLeft /> Volver</button><div style={{ fontSize: '24px', fontWeight: '700', marginBottom: '16px' }}>Nuevo préstamo</div><div className="glass-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}><div><label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Cliente *</label><select value={form.clientId} onChange={e => uf('clientId', e.target.value)} className="glass-input"><option value="">Seleccionar cliente...</option>{clients.map(c => <option key={c.id} value={c.id}>{c.fullName}</option>)}</select></div><div><label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Monto del préstamo *</label><input type="number" value={form.principal} onChange={e => uf('principal', e.target.value)} className="glass-input" placeholder="Ej: 500000" /></div><div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}><div><label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Tasa de interés (%) *</label><input type="number" value={form.interestRate} onChange={e => uf('interestRate', e.target.value)} className="glass-input" placeholder="Ej: 20" /></div><div><label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Número de cuotas *</label><input type="number" value={form.installmentsCount} onChange={e => uf('installmentsCount', e.target.value)} className="glass-input" placeholder="Ej: 5" /></div></div><div><label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Frecuencia</label><select value={form.frequency} onChange={e => uf('frequency', e.target.value)} className="glass-input"><option value="daily">Diaria</option><option value="weekly">Semanal</option><option value="biweekly">Quincenal</option><option value="monthly">Mensual</option></select></div><div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-secondary)', marginTop: '8px' }}>Configuración de mora</div><div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}><select value={form.moraType} onChange={e => uf('moraType', e.target.value)} className="glass-input"><option value="percentage_daily">% diario</option><option value="percentage_weekly">% semanal</option><option value="percentage_monthly">% mensual</option><option value="fixed_daily">Fijo/día</option></select><input type="number" value={form.moraRate} onChange={e => uf('moraRate', e.target.value)} className="glass-input" placeholder="Tasa" step="0.01" /></div><button className="btn btn-success" style={{ width: '100%', marginTop: '8px' }} onClick={handleCreate} disabled={!form.clientId || !form.principal || !form.interestRate || !form.installmentsCount}><IconSVG.Check /> Crear préstamo</button></div></div>);
         };
 
         const LoanDetailPage = ({ id, onNavigate }) => {
             const { loans, clients, installments, payments, refreshAllData, addToast, user } = useApp(); const loan = loans.find(l => l.id === parseInt(id)); const [showPay, setShowPay] = useState(false); const [selInst, setSelInst] = useState(null); const [processing, setProcessing] = useState(false);
             if (!loan) return <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>Préstamo no encontrado</div>; const client = clients.find(c => c.id === loan.clientId); const insts = installments.filter(i => i.loanId === loan.id).sort((a, b) => a.number - b.number); const prog = loan.totalRepayment > 0 ? ((loan.totalPaid || 0) / loan.totalRepayment) * 100 : 0;
-            const hp = async (data) => { if (!selInst) return; setProcessing(true); try { await initDatabase(); const r = PaymentEngine.process({ installment: selInst, amount: data.amount }); await db.transaction('rw', db.installments, db.payments, db.loans, db.capitalMovements, async () => { await db.installments.update(selInst.id, { paidAmount: r.newPaidAmount, remainingAmount: r.newRemaining, status: r.newStatus, moraAmount: Math.max(0, (selInst.moraAmount || 0) - (r.breakdown.mora || 0)), moraDays: r.newStatus === 'paid' ? 0 : selInst.moraDays }); await db.payments.add({ loanId: loan.id, clientId: loan.clientId, installmentId: selInst.id, amount: r.totalPaid, paymentDate: data.date, method: data.method, note: data.note || '', breakdown: r.breakdown, createdAt: new Date().toISOString() }); const ntp = Math.round(((loan.totalPaid || 0) + r.totalPaid) * 100) / 100; await db.loans.update(loan.id, { totalPaid: ntp, currentBalance: Math.round((loan.totalRepayment - ntp) * 100) / 100, progress: loan.totalRepayment > 0 ? ntp / loan.totalRepayment : 0, updatedAt: new Date().toISOString() }); await db.capitalMovements.add({ userId: user.id, type: 'payment', amount: r.totalPaid, date: data.date, description: `Pago ${client?.fullName || 'Cliente'} - ${loan.loanNumber}`, createdAt: new Date().toISOString() }); }); const ui = await db.installments.where({ loanId: loan.id }).toArray(); const ap = ui.every(i => i.status === 'paid' || i.status === 'cancelled'); const ho = ui.some(i => i.status === 'overdue'); await db.loans.update(loan.id, { status: ap ? 'finished' : ho ? 'overdue' : 'active' }); await refreshAllData(); addToast(`Cobro registrado: ${formatCurrency(r.totalPaid)}`, 'success'); setShowPay(false); setSelInst(null); } catch (err) { addToast('No se pudo registrar el pago.', 'error'); } setProcessing(false); };
+            const hp = async (data) => { if (!selInst) return; setProcessing(true); try { console.log('[PAYMENT] Iniciando pago...'); await initDatabase(); const r = PaymentEngine.process({ installment: selInst, amount: data.amount }); await db.transaction('rw', db.installments, db.payments, db.loans, db.capitalMovements, async () => { await db.installments.update(selInst.id, { paidAmount: r.newPaidAmount, remainingAmount: r.newRemaining, status: r.newStatus, moraAmount: Math.max(0, (selInst.moraAmount || 0) - (r.breakdown.mora || 0)), moraDays: r.newStatus === 'paid' ? 0 : selInst.moraDays }); await db.payments.add({ loanId: loan.id, clientId: loan.clientId, installmentId: selInst.id, amount: r.totalPaid, paymentDate: data.date, method: data.method, note: data.note || '', breakdown: r.breakdown, createdAt: new Date().toISOString() }); const ntp = Math.round(((loan.totalPaid || 0) + r.totalPaid) * 100) / 100; await db.loans.update(loan.id, { totalPaid: ntp, currentBalance: Math.round((loan.totalRepayment - ntp) * 100) / 100, progress: loan.totalRepayment > 0 ? ntp / loan.totalRepayment : 0, updatedAt: new Date().toISOString() }); await db.capitalMovements.add({ userId: user.id, type: 'payment', amount: r.totalPaid, date: data.date, description: `Pago ${client?.fullName || 'Cliente'} - ${loan.loanNumber}`, createdAt: new Date().toISOString() }); }); console.log('[PAYMENT] Transacción completada'); const ui = await db.installments.where({ loanId: loan.id }).toArray(); const ap = ui.every(i => i.status === 'paid' || i.status === 'cancelled'); const ho = ui.some(i => i.status === 'overdue'); await db.loans.update(loan.id, { status: ap ? 'finished' : ho ? 'overdue' : 'active' }); await refreshAllData(); addToast(`Cobro registrado: ${formatCurrency(r.totalPaid)}`, 'success'); setShowPay(false); setSelInst(null); } catch (err) { console.error('[PAYMENT ERROR]', err); addToast('No se pudo registrar el pago.', 'error'); } setProcessing(false); };
             return (<div style={{ padding: '20px', paddingBottom: '120px' }}><button onClick={() => onNavigate('loans')} className="back-btn"><IconSVG.ArrowLeft /> Volver</button><div className="glass-card" style={{ padding: '20px', marginBottom: '16px' }}><div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}><div><div style={{ fontSize: '18px', fontWeight: '700' }}>{client?.fullName}</div><div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>#{loan.loanNumber}</div></div><span className={`badge ${loan.status==='overdue'?'badge-danger':loan.status==='finished'?'badge-info':loan.status==='cancelled'?'badge-neutral':'badge-success'}`}>{getStatusLabel(loan.status)}</span></div><div className="progress-bar" style={{ height: '10px', marginBottom: '12px' }}><div className="progress-fill" style={{ width: `${Math.min(100, prog)}%` }} /></div><div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', fontSize: '12px' }}><div><div style={{ color: 'var(--text-muted)' }}>Cobrado</div><div style={{ color: 'var(--success)', fontWeight: '600', fontSize: '15px' }}>{formatCurrency(loan.totalPaid || 0)}</div></div><div><div style={{ color: 'var(--text-muted)' }}>Pendiente</div><div style={{ color: 'var(--warning)', fontWeight: '600', fontSize: '15px' }}>{formatCurrency(loan.currentBalance || 0)}</div></div><div><div style={{ color: 'var(--text-muted)' }}>Total</div><div style={{ fontWeight: '600', fontSize: '15px' }}>{formatCurrency(loan.totalRepayment || 0)}</div></div></div></div><div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '10px' }}>Plan de pagos</div>{insts.map(inst => { const ma = inst.moraAmount || 0; const ipa = inst.status === 'paid'; const io = inst.status === 'overdue'; const twm = (inst.remainingAmount || inst.totalAmount || 0) + ma; return <div key={inst.id} className="glass-card" style={{ padding: '14px', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '12px', opacity: ipa ? 0.5 : 1 }}><div style={{ width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '600', background: ipa ? 'rgba(16,185,129,0.15)' : io ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.05)', color: ipa ? 'var(--success)' : io ? 'var(--danger)' : 'var(--text-primary)' }}>{ipa ? <IconSVG.Check /> : io ? '!' : inst.number}</div><div style={{ flex: 1 }}><div style={{ fontSize: '13px', fontWeight: '500' }}>Cuota {inst.number}</div><div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Vence: {formatDate(inst.dueDate)}</div></div><div style={{ textAlign: 'right' }}><div style={{ fontSize: '14px', fontWeight: '600' }}>{ipa ? formatCurrency(inst.totalAmount) : formatCurrency(twm)}</div>{ma > 0 && !ipa && <div style={{ fontSize: '10px', color: 'var(--danger-light)' }}>+{formatCurrency(ma)} mora</div>}</div>{!ipa && inst.status !== 'cancelled' && <button className="btn btn-success btn-sm" onClick={() => { setSelInst(inst); setShowPay(true); }}>Cobrar</button>}</div>; })}{showPay && selInst && <><div className="sheet-overlay" onClick={() => !processing && setShowPay(false)} /><div className="sheet-content"><div className="sheet-handle" /><div style={{ fontSize: '18px', fontWeight: '700', marginBottom: '16px' }}>Registrar cobro</div><div className="glass-card" style={{ padding: '14px', marginBottom: '16px' }}><div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{client?.fullName}</div><div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Cuota {selInst.number} · Vence: {formatDate(selInst.dueDate)}</div><div style={{ marginTop: '10px', fontSize: '16px', fontWeight: '700', color: 'var(--accent-light)' }}>Total: {formatCurrency((selInst.remainingAmount || selInst.totalAmount || 0) + (selInst.moraAmount || 0))}</div></div><PaymentForm inst={selInst} onSubmit={hp} onCancel={() => setShowPay(false)} processing={processing} /></div></>}</div>);
         };
 
@@ -352,12 +476,12 @@ const SkeletonCard = () => <div className="skeleton" style={{ height: '80px', ma
         const CollectionsPage = ({ onNavigate }) => { const { loans, clients } = useApp(); const [filter, setFilter] = useState('pending'); const data = loans.map(l => ({ ...l, _c: clients.find(c => c.id === l.clientId) })); const filtered = data.filter(l => filter === 'all' ? true : filter === 'pending' ? l.status === 'active' : filter === 'overdue' ? l.status === 'overdue' : l.status === 'finished'); return (<div style={{ padding: '20px', paddingBottom: '120px' }}><div style={{ fontSize: '26px', fontWeight: '700', marginBottom: '14px' }}>Cobros</div><div style={{ display: 'flex', gap: '6px', marginBottom: '14px', overflow: 'auto' }}>{['pending','overdue','finished','all'].map(f => <button key={f} onClick={() => setFilter(f)} className="btn btn-ghost btn-sm" style={{ background: filter === f ? 'rgba(99,102,241,0.15)' : 'transparent', whiteSpace: 'nowrap' }}>{f==='pending'?'Pendientes':f==='overdue'?'Vencidos':f==='finished'?'Pagados':'Todos'}</button>)}</div>{filtered.map(l => <div key={l.id} className="glass-card" onClick={() => onNavigate('loanDetail', l.id)} style={{ padding: '14px', marginBottom: '8px' }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><div><div style={{ fontWeight: '600' }}>{l._c?.fullName}</div><div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>#{l.loanNumber}</div></div><span style={{ fontWeight: '700', color: l.status === 'overdue' ? 'var(--danger)' : 'var(--warning)' }}>{formatCurrency(l.currentBalance)}</span></div></div>)}</div>); };
 
         // ========================================
-        // FINANZAS Y GASTOS
+        // FINANZAS
         // ========================================
         const FinancePage = ({ onNavigate }) => { const { installments, payments, loans, expenses, capitalMovements, refreshKey } = useApp(); const now = new Date(); const metrics = useMemo(() => FinanceEngine.calculateMetrics({ installments, payments, loans, expenses, capitalMovements, year: now.getFullYear(), month: now.getMonth() + 1 }), [installments, payments, loans, expenses, capitalMovements, refreshKey]); return (<div style={{ padding: '20px', paddingBottom: '120px' }}><div style={{ fontSize: '26px', fontWeight: '700', marginBottom: '14px' }}>Finanzas</div><div className="glass-card" style={{ padding: '20px', marginBottom: '14px', textAlign: 'center' }}><div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Capital total</div><div style={{ fontSize: '32px', fontWeight: '700', color: 'var(--accent-light)' }}>{formatCurrency(metrics.totalCapital)}</div></div><div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '14px' }}><div className="glass-card" style={{ padding: '14px', textAlign: 'center' }}><div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Prestado</div><div style={{ fontSize: '18px', fontWeight: '700' }}>{formatCurrency(metrics.totalLent)}</div></div><div className="glass-card" style={{ padding: '14px', textAlign: 'center' }}><div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Disponible</div><div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--success)' }}>{formatCurrency(metrics.availableCapital)}</div></div></div><div className="glass-card" style={{ padding: '14px', marginBottom: '12px', textAlign: 'center' }}><div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Mora cobrada este mes</div><div style={{ fontSize: '20px', fontWeight: '700', color: 'var(--danger-light)' }}>{formatCurrency(metrics.collectedMora || 0)}</div></div><button className="btn btn-primary" style={{ width: '100%' }} onClick={() => onNavigate('expenses')}><IconSVG.TrendingUp /> Ver gastos</button></div>); };
 
         // ========================================
-        // GASTOS (CORREGIDO - Categorías funcionando)
+        // GASTOS (CORREGIDO)
         // ========================================
         const ExpensesPage = ({ onNavigate }) => {
             const { expenses, expenseCategories, refreshAllData, addToast, user } = useApp();
@@ -368,6 +492,7 @@ const SkeletonCard = () => <div className="skeleton" style={{ height: '80px', ma
             const handleSave = async (data) => {
                 if (!data.amount || data.amount <= 0) { addToast('Monto inválido', 'error'); return; }
                 try {
+                    console.log('[EXPENSE] Guardando gasto...');
                     await initDatabase();
                     let savedId;
                     if (editing) {
@@ -378,11 +503,13 @@ const SkeletonCard = () => <div className="skeleton" style={{ height: '80px', ma
                         await db.capitalMovements.add({ userId: user.id, type: 'expense', amount: data.amount, date: data.date, description: `Gasto: ${data.category}`, createdAt: new Date().toISOString() });
                     }
                     await verifyPersistence(db.expenses, savedId);
+                    console.log('[EXPENSE] Verificado en DB');
                     await refreshAllData();
+                    console.log('[EXPENSE] Estado actualizado');
                     addToast(editing ? 'Gasto actualizado correctamente' : 'Gasto registrado correctamente', 'success');
                     setShowForm(false); setEditing(null);
                 } catch (err) {
-                    console.error('[EXPENSE] Error:', err);
+                    console.error('[EXPENSE ERROR]', err);
                     addToast('No se pudo guardar el gasto.', 'error');
                 }
             };
@@ -420,7 +547,6 @@ const SkeletonCard = () => <div className="skeleton" style={{ height: '80px', ma
                                 </div>
                                 <div style={{ textAlign: 'right', marginRight: '8px' }}>
                                     <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--danger)' }}>-{formatCurrency(e.amount)}</div>
-                                    <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>{e.paymentMethod}</div>
                                 </div>
                                 <div style={{ display: 'flex', gap: '4px' }}>
                                     <button className="btn btn-ghost btn-sm" style={{ padding: '6px 8px' }} onClick={() => { setEditing(e); setShowForm(true); }}><IconSVG.Edit3 /></button>
@@ -446,19 +572,9 @@ const SkeletonCard = () => <div className="skeleton" style={{ height: '80px', ma
         };
 
         const ExpenseForm = ({ cats, initial, onSave, onRefresh }) => {
-            const [f, setF] = useState({
-                amount: initial?.amount?.toString() || '',
-                category: initial?.category || (cats && cats.length > 0 ? cats[0].name : 'Otros'),
-                date: initial?.date?.split('T')[0] || new Date().toISOString().split('T')[0],
-                time: initial?.time || '',
-                description: initial?.description || '',
-                provider: initial?.provider || '',
-                paymentMethod: initial?.paymentMethod || 'Efectivo',
-                notes: initial?.notes || ''
-            });
-            const [showNewCat, setShowNewCat] = useState(false);
-            const [newCatName, setNewCatName] = useState('');
-            const { addToast } = useApp();
+            const [f, setF] = useState({ amount: initial?.amount?.toString() || '', category: initial?.category || (cats && cats.length > 0 ? cats[0].name : 'Otros'), date: initial?.date?.split('T')[0] || new Date().toISOString().split('T')[0], time: initial?.time || '', description: initial?.description || '', provider: initial?.provider || '', paymentMethod: initial?.paymentMethod || 'Efectivo', notes: initial?.notes || '' });
+            const [showNewCat, setShowNewCat] = useState(false); const [newCatName, setNewCatName] = useState('');
+            const { addToast, setExpenseCategories } = useApp();
 
             const handleAddCategory = async () => {
                 if (!newCatName.trim()) return;
@@ -466,65 +582,19 @@ const SkeletonCard = () => <div className="skeleton" style={{ height: '80px', ma
                     await db.expenseCategories.add({ name: newCatName.trim() });
                     if (onRefresh) await onRefresh();
                     setF(prev => ({ ...prev, category: newCatName.trim() }));
-                    setNewCatName('');
-                    setShowNewCat(false);
+                    setNewCatName(''); setShowNewCat(false);
                     addToast('Categoría agregada', 'success');
                 } catch { addToast('Error al agregar categoría', 'error'); }
             };
 
             return (
                 <form onSubmit={e => { e.preventDefault(); onSave(f); }} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div>
-                        <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Monto *</label>
-                        <input type="number" value={f.amount} onChange={e => setF({...f, amount: e.target.value})} className="glass-input" required autoFocus />
-                    </div>
-                    <div>
-                        <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Categoría</label>
-                        {!showNewCat ? (
-                            <div style={{ display: 'flex', gap: '6px' }}>
-                                <select value={f.category} onChange={e => setF({...f, category: e.target.value})} className="glass-input" style={{ flex: 1 }}>
-                                    {(cats || []).map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                                </select>
-                                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowNewCat(true)}><IconSVG.Plus /></button>
-                            </div>
-                        ) : (
-                            <div style={{ display: 'flex', gap: '6px' }}>
-                                <input type="text" value={newCatName} onChange={e => setNewCatName(e.target.value)} className="glass-input" style={{ flex: 1 }} placeholder="Nueva categoría" autoFocus />
-                                <button type="button" className="btn btn-success btn-sm" onClick={handleAddCategory}><IconSVG.Check /></button>
-                                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowNewCat(false)}><IconSVG.X /></button>
-                            </div>
-                        )}
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                        <div>
-                            <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Fecha</label>
-                            <input type="date" value={f.date} onChange={e => setF({...f, date: e.target.value})} className="glass-input" />
-                        </div>
-                        <div>
-                            <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Hora</label>
-                            <input type="time" value={f.time} onChange={e => setF({...f, time: e.target.value})} className="glass-input" />
-                        </div>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                        <div>
-                            <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Método de pago</label>
-                            <select value={f.paymentMethod} onChange={e => setF({...f, paymentMethod: e.target.value})} className="glass-input">
-                                <option>Efectivo</option><option>Transferencia</option><option>Nequi</option><option>Daviplata</option><option>Tarjeta</option><option>Otro</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Proveedor</label>
-                            <input type="text" value={f.provider} onChange={e => setF({...f, provider: e.target.value})} className="glass-input" />
-                        </div>
-                    </div>
-                    <div>
-                        <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Descripción</label>
-                        <input type="text" value={f.description} onChange={e => setF({...f, description: e.target.value})} className="glass-input" />
-                    </div>
-                    <div>
-                        <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Observaciones</label>
-                        <textarea value={f.notes} onChange={e => setF({...f, notes: e.target.value})} className="glass-input" rows="2" />
-                    </div>
+                    <div><label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Monto *</label><input type="number" value={f.amount} onChange={e => setF({...f, amount: e.target.value})} className="glass-input" required autoFocus /></div>
+                    <div><label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Categoría</label>{!showNewCat ? <div style={{ display: 'flex', gap: '6px' }}><select value={f.category} onChange={e => setF({...f, category: e.target.value})} className="glass-input" style={{ flex: 1 }}>{(cats || []).map(c => <option key={c.id} value={c.name}>{c.name}</option>)}</select><button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowNewCat(true)}><IconSVG.Plus /></button></div> : <div style={{ display: 'flex', gap: '6px' }}><input type="text" value={newCatName} onChange={e => setNewCatName(e.target.value)} className="glass-input" style={{ flex: 1 }} placeholder="Nueva categoría" autoFocus /><button type="button" className="btn btn-success btn-sm" onClick={handleAddCategory}><IconSVG.Check /></button><button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowNewCat(false)}><IconSVG.X /></button></div>}</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}><div><label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Fecha</label><input type="date" value={f.date} onChange={e => setF({...f, date: e.target.value})} className="glass-input" /></div><div><label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Hora</label><input type="time" value={f.time} onChange={e => setF({...f, time: e.target.value})} className="glass-input" /></div></div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}><div><label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Método de pago</label><select value={f.paymentMethod} onChange={e => setF({...f, paymentMethod: e.target.value})} className="glass-input"><option>Efectivo</option><option>Transferencia</option><option>Nequi</option><option>Daviplata</option><option>Tarjeta</option><option>Otro</option></select></div><div><label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Proveedor</label><input type="text" value={f.provider} onChange={e => setF({...f, provider: e.target.value})} className="glass-input" /></div></div>
+                    <div><label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Descripción</label><input type="text" value={f.description} onChange={e => setF({...f, description: e.target.value})} className="glass-input" /></div>
+                    <div><label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Observaciones</label><textarea value={f.notes} onChange={e => setF({...f, notes: e.target.value})} className="glass-input" rows="2" /></div>
                     <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '6px' }}>{initial ? 'Actualizar gasto' : 'Registrar gasto'}</button>
                 </form>
             );
@@ -537,11 +607,7 @@ const SkeletonCard = () => <div className="skeleton" style={{ height: '80px', ma
             const { user, onLogout, addToast, config, refreshAllData } = useApp(); const [subpage, setSubpage] = useState('main'); const [showPassword, setShowPassword] = useState(false);
             const handleExport = async () => { try { await initDatabase(); const data = { clients: await db.clients.where({ userId: user.id }).toArray(), loans: await db.loans.where({ userId: user.id }).toArray(), installments: await db.installments.toArray(), payments: await db.payments.toArray(), expenses: await db.expenses.where({ userId: user.id }).toArray(), exportDate: new Date().toISOString() }; const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `loansw-backup-${new Date().toISOString().split('T')[0]}.json`; a.click(); addToast('Respaldo exportado', 'success'); } catch { addToast('Error al exportar', 'error'); } };
             if (subpage === 'security') return (<div style={{ padding: '20px', paddingBottom: '120px' }}><button onClick={() => setSubpage('main')} className="back-btn"><IconSVG.ArrowLeft /> Volver</button><div style={{ fontSize: '24px', fontWeight: '700', marginBottom: '20px' }}>Seguridad</div><div className="glass-card" style={{ padding: '16px', marginBottom: '8px' }} onClick={() => setShowPassword(true)}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><div><div style={{ fontSize: '14px', fontWeight: '500' }}>Cambiar contraseña</div><div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Actualiza tu acceso</div></div><IconSVG.Lock /></div></div><button className="btn btn-danger" style={{ width: '100%', marginTop: '16px' }} onClick={onLogout}><IconSVG.LogOut /> Cerrar sesión</button>{showPassword && <div className="modal-overlay" onClick={() => setShowPassword(false)}><div className="modal-content" onClick={e => e.stopPropagation()}><div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}><div style={{ fontSize: '18px', fontWeight: '700' }}>Cambiar contraseña</div><button onClick={() => setShowPassword(false)} className="btn btn-ghost btn-sm"><IconSVG.X /></button></div><ChangePasswordForm onSuccess={() => { setShowPassword(false); addToast('Contraseña actualizada', 'success'); }} /></div></div>}</div>);
-            if (subpage === 'preferences') {
-                const [lp, setLp] = useState({ defaultInterestRate: config?.defaultInterestRate || 20, defaultFrequency: config?.defaultFrequency || 'monthly', defaultInstallments: config?.defaultInstallments || 5 });
-                const handleSave = async () => { try { await initDatabase(); const existing = await db.settings.get(user.id); const newCfg = { ...(existing || {}), ...lp, userId: user.id }; await db.settings.put(newCfg); await verifyPersistence(db.settings, user.id); await refreshAllData(); addToast('Preferencias guardadas correctamente', 'success'); } catch (err) { console.error('[SETTINGS] Error:', err); addToast('No se pudieron guardar las preferencias.', 'error'); } };
-                return (<div style={{ padding: '20px', paddingBottom: '120px' }}><button onClick={() => setSubpage('main')} className="back-btn"><IconSVG.ArrowLeft /> Volver</button><div style={{ fontSize: '24px', fontWeight: '700', marginBottom: '20px' }}>Preferencias</div><div className="glass-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}><div><label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Tasa de interés predeterminada (%)</label><input type="number" value={lp.defaultInterestRate} onChange={e => setLp({...lp, defaultInterestRate: parseFloat(e.target.value) || 0})} className="glass-input" min="0" max="100" step="0.1" /></div><div><label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Frecuencia predeterminada</label><select value={lp.defaultFrequency} onChange={e => setLp({...lp, defaultFrequency: e.target.value})} className="glass-input"><option value="daily">Diaria</option><option value="weekly">Semanal</option><option value="biweekly">Quincenal</option><option value="monthly">Mensual</option></select></div><div><label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Número de cuotas predeterminado</label><input type="number" value={lp.defaultInstallments} onChange={e => setLp({...lp, defaultInstallments: parseInt(e.target.value) || 1})} className="glass-input" min="1" max="120" /></div><button className="btn btn-primary" style={{ width: '100%', marginTop: '8px' }} onClick={handleSave}><IconSVG.Check /> Guardar preferencias</button></div></div>);
-            }
+            if (subpage === 'preferences') { const [lp, setLp] = useState({ defaultInterestRate: config?.defaultInterestRate || 20, defaultFrequency: config?.defaultFrequency || 'monthly', defaultInstallments: config?.defaultInstallments || 5 }); const hs = async () => { try { await initDatabase(); const ex = await db.settings.get(user.id); const nc = { ...(ex || {}), ...lp, userId: user.id }; await db.settings.put(nc); await verifyPersistence(db.settings, user.id); await refreshAllData(); addToast('Preferencias guardadas correctamente', 'success'); } catch (err) { console.error('[SETTINGS]', err); addToast('No se pudieron guardar.', 'error'); } }; return (<div style={{ padding: '20px', paddingBottom: '120px' }}><button onClick={() => setSubpage('main')} className="back-btn"><IconSVG.ArrowLeft /> Volver</button><div style={{ fontSize: '24px', fontWeight: '700', marginBottom: '20px' }}>Preferencias</div><div className="glass-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}><div><label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Tasa predeterminada (%)</label><input type="number" value={lp.defaultInterestRate} onChange={e => setLp({...lp, defaultInterestRate: parseFloat(e.target.value) || 0})} className="glass-input" min="0" max="100" step="0.1" /></div><div><label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Frecuencia predeterminada</label><select value={lp.defaultFrequency} onChange={e => setLp({...lp, defaultFrequency: e.target.value})} className="glass-input"><option value="daily">Diaria</option><option value="weekly">Semanal</option><option value="biweekly">Quincenal</option><option value="monthly">Mensual</option></select></div><div><label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Cuotas predeterminadas</label><input type="number" value={lp.defaultInstallments} onChange={e => setLp({...lp, defaultInstallments: parseInt(e.target.value) || 1})} className="glass-input" min="1" max="120" /></div><button className="btn btn-primary" style={{ width: '100%', marginTop: '8px' }} onClick={hs}><IconSVG.Check /> Guardar preferencias</button></div></div>); }
             return (<div style={{ padding: '20px', paddingBottom: '120px' }}><div style={{ fontSize: '26px', fontWeight: '700', marginBottom: '14px' }}>Ajustes</div><div className="glass-card" style={{ padding: '16px', marginBottom: '12px' }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'linear-gradient(135deg, #6366f1, #4f46e5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', fontWeight: '700', color: 'white' }}>{(user?.fullName || user?.document || '?')[0].toUpperCase()}</div><div style={{ flex: 1 }}><div style={{ fontSize: '15px', fontWeight: '600' }}>{user?.fullName || 'Usuario'}</div><div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Doc: {user?.document || 'N/A'}</div></div></div></div><div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}><div className="glass-card" style={{ padding: '16px' }} onClick={() => setSubpage('security')}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><div style={{ color: 'var(--accent-light)' }}><IconSVG.Lock /></div><div><div style={{ fontSize: '14px', fontWeight: '500' }}>Seguridad</div><div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Contraseña y sesiones</div></div></div><IconSVG.ArrowLeft /></div></div><div className="glass-card" style={{ padding: '16px' }} onClick={() => setSubpage('preferences')}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><div style={{ color: 'var(--accent-light)' }}><IconSVG.Settings /></div><div><div style={{ fontSize: '14px', fontWeight: '500' }}>Preferencias</div><div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Moneda y configuración</div></div></div><IconSVG.ArrowLeft /></div></div><div className="glass-card" style={{ padding: '16px' }} onClick={handleExport}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><div style={{ color: 'var(--success)' }}><IconSVG.Download /></div><div><div style={{ fontSize: '14px', fontWeight: '500' }}>Exportar respaldo</div><div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Descargar copia de seguridad</div></div></div><IconSVG.ArrowLeft /></div></div></div><button className="btn btn-danger" style={{ width: '100%', marginTop: '24px' }} onClick={onLogout}><IconSVG.LogOut /> Cerrar sesión</button><div style={{ marginTop: '24px', textAlign: 'center', fontSize: '11px', color: 'var(--text-muted)' }}>LOANS W v6.0 · Build {DB_VERSION} · IndexedDB</div></div>);
         };
 
@@ -564,7 +630,7 @@ const SkeletonCard = () => <div className="skeleton" style={{ height: '80px', ma
         };
 
         ReactDOM.render(<App />, document.getElementById('root'));
-        console.log('LOANS W v6.0 — Sistema Financiero Profesional — Auditoría completada');
+        console.log('LOANS W v6.0 — Sistema Financiero Profesional — Persistencia verificada');
     </script>
 </body>
 </html>
