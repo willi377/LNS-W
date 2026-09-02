@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#060610">
-    <title>LOANS W — Sistema Profesional de Abonos y Pagos v9.2</title>
+    <title>LOANS W — Sistema Financiero Completo v9.4</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -35,13 +35,8 @@
             --radius-lg: 16px;
             --radius-xl: 20px;
             --radius-2xl: 24px;
-            --shadow-glow: 0 8px 32px rgba(99,102,241,0.15);
         }
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'Segoe UI', sans-serif;
             background: var(--bg-deep);
@@ -51,41 +46,16 @@
             -webkit-font-smoothing: antialiased;
             min-height: 100vh;
             min-height: 100dvh;
-            letter-spacing: -0.01em;
         }
-        #root {
-            min-height: 100vh;
-            min-height: 100dvh;
-        }
+        #root { min-height: 100vh; min-height: 100dvh; }
 
-        @keyframes fadeUp {
-            from { opacity: 0; transform: translateY(12px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-        @keyframes slideUp {
-            from { transform: translateY(100%); }
-            to { transform: translateY(0); }
-        }
-        @keyframes shimmer {
-            0% { background-position: -200% 0; }
-            100% { background-position: 200% 0; }
-        }
-        @keyframes pulse-glow {
-            0%, 100% { box-shadow: 0 0 20px var(--accent-glow); }
-            50% { box-shadow: 0 0 40px rgba(99,102,241,0.5); }
-        }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        @keyframes skeleton {
-            0% { opacity: 0.3; }
-            50% { opacity: 0.6; }
-            100% { opacity: 0.3; }
-        }
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+        @keyframes pulse-glow { 0%,100% { box-shadow: 0 0 20px var(--accent-glow); } 50% { box-shadow: 0 0 40px rgba(99,102,241,0.5); } }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes skeleton { 0% { opacity: 0.3; } 50% { opacity: 0.6; } 100% { opacity: 0.3; } }
 
         .glass-card {
             background: rgba(255,255,255,0.03);
@@ -95,23 +65,10 @@
             border-radius: var(--radius-lg);
             transition: all 0.25s;
             cursor: pointer;
-            -webkit-tap-highlight-color: transparent;
             touch-action: manipulation;
         }
-        .glass-card:hover {
-            background: rgba(255,255,255,0.05);
-            border-color: rgba(255,255,255,0.1);
-            transform: translateY(-1px);
-        }
-        .glass-card:active {
-            transform: scale(0.985);
-        }
-        .glass-card.disabled {
-            cursor: default;
-        }
-        .glass-card.disabled:hover {
-            transform: none;
-        }
+        .glass-card:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); transform: translateY(-1px); }
+        .glass-card:active { transform: scale(0.985); }
 
         .glass-input {
             background: rgba(255,255,255,0.04);
@@ -127,22 +84,9 @@
             -webkit-appearance: none;
             appearance: none;
         }
-        .glass-input:focus {
-            border-color: var(--accent);
-            box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
-            background: rgba(255,255,255,0.06);
-        }
-        .glass-input::placeholder {
-            color: var(--text-muted);
-        }
-        .glass-input.error {
-            border-color: var(--danger);
-            box-shadow: 0 0 0 3px rgba(239,68,68,0.12);
-        }
-        .glass-input.success {
-            border-color: var(--success);
-            box-shadow: 0 0 0 3px rgba(16,185,129,0.12);
-        }
+        .glass-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(99,102,241,0.12); background: rgba(255,255,255,0.06); }
+        .glass-input::placeholder { color: var(--text-muted); }
+        .glass-input.error { border-color: var(--danger); box-shadow: 0 0 0 3px rgba(239,68,68,0.12); }
 
         select.glass-input {
             background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%2394a3b8' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3csvg%3e");
@@ -165,7 +109,6 @@
             transition: all 0.2s;
             border: none;
             outline: none;
-            -webkit-tap-highlight-color: transparent;
             touch-action: manipulation;
             white-space: nowrap;
             position: relative;
@@ -181,60 +124,19 @@
             opacity: 0;
             transition: transform 0.5s, opacity 1s;
         }
-        .btn:active::after {
-            transform: scale(4);
-            opacity: 0.3;
-            transition: 0s;
-        }
-        .btn:active {
-            transform: scale(0.96);
-        }
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            pointer-events: none;
-        }
+        .btn:active::after { transform: scale(4); opacity: 0.3; transition: 0s; }
+        .btn:active { transform: scale(0.96); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
 
-        .btn-primary {
-            background: linear-gradient(135deg, var(--accent), var(--accent-dark));
-            color: #fff;
-            box-shadow: 0 4px 16px var(--accent-glow);
-        }
-        .btn-success {
-            background: linear-gradient(135deg, var(--success), #059669);
-            color: #fff;
-        }
-        .btn-danger {
-            background: linear-gradient(135deg, var(--danger), #dc2626);
-            color: #fff;
-        }
-        .btn-warning {
-            background: linear-gradient(135deg, var(--warning), #d97706);
-            color: #fff;
-        }
-        .btn-ghost {
-            background: rgba(255,255,255,0.04);
-            color: var(--text-primary);
-            border: 1px solid rgba(255,255,255,0.1);
-        }
-        .btn-ghost:hover {
-            background: rgba(255,255,255,0.08);
-        }
-        .btn-sm {
-            padding: 7px 14px;
-            font-size: 12px;
-            border-radius: var(--radius-sm);
-            min-height: 34px;
-        }
-        .btn-xs {
-            padding: 4px 10px;
-            font-size: 10px;
-            border-radius: var(--radius-sm);
-            min-height: 28px;
-        }
-        .btn-block {
-            width: 100%;
-        }
+        .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent-dark)); color: #fff; box-shadow: 0 4px 16px var(--accent-glow); }
+        .btn-success { background: linear-gradient(135deg, var(--success), #059669); color: #fff; }
+        .btn-danger { background: linear-gradient(135deg, var(--danger), #dc2626); color: #fff; }
+        .btn-warning { background: linear-gradient(135deg, var(--warning), #d97706); color: #fff; }
+        .btn-ghost { background: rgba(255,255,255,0.04); color: var(--text-primary); border: 1px solid rgba(255,255,255,0.1); }
+        .btn-ghost:hover { background: rgba(255,255,255,0.08); }
+        .btn-sm { padding: 7px 14px; font-size: 12px; border-radius: var(--radius-sm); min-height: 34px; }
+        .btn-xs { padding: 4px 10px; font-size: 10px; border-radius: var(--radius-sm); min-height: 28px; }
+        .btn-block { width: 100%; }
 
         .badge {
             display: inline-flex;
@@ -247,52 +149,15 @@
             letter-spacing: 0.02em;
             white-space: nowrap;
         }
-        .badge-success {
-            background: rgba(16,185,129,0.12);
-            color: var(--success-light);
-            border: 1px solid rgba(16,185,129,0.2);
-        }
-        .badge-warning {
-            background: rgba(245,158,11,0.12);
-            color: var(--warning-light);
-            border: 1px solid rgba(245,158,11,0.2);
-        }
-        .badge-danger {
-            background: rgba(239,68,68,0.12);
-            color: var(--danger-light);
-            border: 1px solid rgba(239,68,68,0.2);
-        }
-        .badge-info {
-            background: rgba(99,102,241,0.12);
-            color: var(--accent-light);
-            border: 1px solid rgba(99,102,241,0.2);
-        }
-        .badge-neutral {
-            background: rgba(255,255,255,0.05);
-            color: var(--text-muted);
-            border: 1px solid rgba(255,255,255,0.1);
-        }
-        .badge-purple {
-            background: rgba(139,92,246,0.12);
-            color: #a78bfa;
-            border: 1px solid rgba(139,92,246,0.2);
-        }
+        .badge-success { background: rgba(16,185,129,0.12); color: var(--success-light); border: 1px solid rgba(16,185,129,0.2); }
+        .badge-warning { background: rgba(245,158,11,0.12); color: var(--warning-light); border: 1px solid rgba(245,158,11,0.2); }
+        .badge-danger { background: rgba(239,68,68,0.12); color: var(--danger-light); border: 1px solid rgba(239,68,68,0.2); }
+        .badge-info { background: rgba(99,102,241,0.12); color: var(--accent-light); border: 1px solid rgba(99,102,241,0.2); }
+        .badge-neutral { background: rgba(255,255,255,0.05); color: var(--text-muted); border: 1px solid rgba(255,255,255,0.1); }
+        .badge-purple { background: rgba(139,92,246,0.12); color: #a78bfa; border: 1px solid rgba(139,92,246,0.2); }
 
-        .progress-bar {
-            width: 100%;
-            height: 8px;
-            background: rgba(255,255,255,0.06);
-            border-radius: 4px;
-            overflow: hidden;
-        }
-        .progress-fill {
-            height: 100%;
-            border-radius: 4px;
-            transition: width 0.8s;
-            background: linear-gradient(90deg, var(--accent), var(--accent-light), #a78bfa);
-            background-size: 200% 100%;
-            animation: shimmer 3s infinite;
-        }
+        .progress-bar { width: 100%; height: 8px; background: rgba(255,255,255,0.06); border-radius: 4px; overflow: hidden; }
+        .progress-fill { height: 100%; border-radius: 4px; transition: width 0.8s; background: linear-gradient(90deg, var(--accent), var(--accent-light), #a78bfa); background-size: 200% 100%; animation: shimmer 3s infinite; }
 
         .bottom-nav {
             position: fixed;
@@ -324,13 +189,8 @@
             transition: all 0.2s;
             min-width: 50px;
         }
-        .nav-item.active {
-            color: var(--accent-light);
-            background: rgba(99,102,241,0.08);
-        }
-        .nav-item:hover {
-            color: var(--text-secondary);
-        }
+        .nav-item.active { color: var(--accent-light); background: rgba(99,102,241,0.08); }
+        .nav-item:hover { color: var(--text-secondary); }
 
         .fab {
             position: fixed;
@@ -350,16 +210,8 @@
             box-shadow: 0 8px 32px rgba(99,102,241,0.4);
             transition: all 0.3s;
         }
-        .fab:active {
-            transform: scale(0.9);
-        }
-        .fab-overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.5);
-            z-index: 84;
-            animation: fadeIn 0.2s;
-        }
+        .fab:active { transform: scale(0.9); }
+        .fab-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 84; animation: fadeIn 0.2s; }
         .fab-menu {
             position: fixed;
             bottom: calc(150px + env(safe-area-inset-bottom));
@@ -386,9 +238,7 @@
             animation: fadeUp 0.3s forwards;
             opacity: 0;
         }
-        .fab-menu-item:hover {
-            background: rgba(30,30,50,0.95);
-        }
+        .fab-menu-item:hover { background: rgba(30,30,50,0.95); }
 
         .modal-overlay {
             position: fixed;
@@ -416,42 +266,8 @@
             animation: fadeUp 0.3s;
             margin: auto;
         }
-        .modal-content::-webkit-scrollbar {
-            width: 3px;
-        }
-        .modal-content::-webkit-scrollbar-thumb {
-            background: rgba(255,255,255,0.06);
-            border-radius: 2px;
-        }
-
-        .sheet-overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.6);
-            z-index: 90;
-            animation: fadeIn 0.2s;
-        }
-        .sheet-content {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: var(--bg-elevated);
-            border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-            padding: 16px 20px calc(16px + env(safe-area-inset-bottom));
-            z-index: 91;
-            animation: slideUp 0.35s;
-            max-height: 85vh;
-            overflow-y: auto;
-            border-top: 1px solid var(--glass-border);
-        }
-        .sheet-handle {
-            width: 32px;
-            height: 4px;
-            background: rgba(255,255,255,0.2);
-            border-radius: 2px;
-            margin: 0 auto 14px;
-        }
+        .modal-content::-webkit-scrollbar { width: 3px; }
+        .modal-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 2px; }
 
         .toast-container {
             position: fixed;
@@ -478,26 +294,10 @@
             border: 1px solid;
             word-break: break-word;
         }
-        .toast-success {
-            background: rgba(16,185,129,0.15);
-            border-color: rgba(16,185,129,0.3);
-            color: var(--success-light);
-        }
-        .toast-error {
-            background: rgba(239,68,68,0.15);
-            border-color: rgba(239,68,68,0.3);
-            color: var(--danger-light);
-        }
-        .toast-info {
-            background: rgba(99,102,241,0.15);
-            border-color: rgba(99,102,241,0.3);
-            color: var(--accent-light);
-        }
-        .toast-warning {
-            background: rgba(245,158,11,0.15);
-            border-color: rgba(245,158,11,0.3);
-            color: var(--warning-light);
-        }
+        .toast-success { background: rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.3); color: var(--success-light); }
+        .toast-error { background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.3); color: var(--danger-light); }
+        .toast-info { background: rgba(99,102,241,0.15); border-color: rgba(99,102,241,0.3); color: var(--accent-light); }
+        .toast-warning { background: rgba(245,158,11,0.15); border-color: rgba(245,158,11,0.3); color: var(--warning-light); }
 
         .back-btn {
             display: inline-flex;
@@ -514,55 +314,12 @@
             border-radius: var(--radius-sm);
             transition: all 0.2s;
         }
-        .back-btn:hover {
-            background: rgba(255,255,255,0.06);
-            color: var(--text-primary);
-        }
+        .back-btn:hover { background: rgba(255,255,255,0.06); color: var(--text-primary); }
 
-        .quick-action {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 6px;
-            padding: 14px 18px;
-            border-radius: var(--radius-md);
-            background: rgba(255,255,255,0.03);
-            border: 1px solid rgba(255,255,255,0.05);
-            cursor: pointer;
-            transition: all 0.2s;
-            text-align: center;
-            min-width: 75px;
-        }
-        .quick-action:hover {
-            background: rgba(255,255,255,0.06);
-        }
-        .quick-action:active {
-            transform: scale(0.95);
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 50px 20px;
-            animation: fadeIn 0.4s;
-        }
-        .spinner {
-            width: 24px;
-            height: 24px;
-            border: 3px solid rgba(255,255,255,0.1);
-            border-top-color: var(--accent);
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-        }
-        .spinner-lg {
-            width: 36px;
-            height: 36px;
-            border-width: 4px;
-        }
-        .skeleton {
-            background: rgba(255,255,255,0.04);
-            border-radius: var(--radius-md);
-            animation: skeleton 1.5s infinite;
-        }
+        .empty-state { text-align: center; padding: 50px 20px; animation: fadeIn 0.4s; }
+        .spinner { width: 24px; height: 24px; border: 3px solid rgba(255,255,255,0.1); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+        .spinner-lg { width: 36px; height: 36px; border-width: 4px; }
+        .skeleton { background: rgba(255,255,255,0.04); border-radius: var(--radius-md); animation: skeleton 1.5s infinite; }
 
         .confirm-overlay {
             position: fixed;
@@ -606,19 +363,9 @@
             font-weight: 500;
             color: var(--text-secondary);
         }
-        .payment-type-item:hover {
-            background: rgba(255,255,255,0.06);
-        }
-        .payment-type-item.active {
-            border-color: var(--accent);
-            background: rgba(99,102,241,0.08);
-            color: var(--accent-light);
-        }
-        .payment-type-item .icon {
-            font-size: 22px;
-            display: block;
-            margin-bottom: 4px;
-        }
+        .payment-type-item:hover { background: rgba(255,255,255,0.06); }
+        .payment-type-item.active { border-color: var(--accent); background: rgba(99,102,241,0.08); color: var(--accent-light); }
+        .payment-type-item .icon { font-size: 22px; display: block; margin-bottom: 4px; }
 
         .receipt {
             background: var(--bg-primary);
@@ -627,93 +374,31 @@
             padding: 24px;
             margin: 16px 0;
         }
-        .receipt-title {
-            text-align: center;
-            font-size: 18px;
-            font-weight: 700;
-            color: var(--accent-light);
-            margin-bottom: 4px;
-        }
-        .receipt-subtitle {
-            text-align: center;
-            font-size: 11px;
-            color: var(--text-muted);
-            margin-bottom: 16px;
-        }
-        .receipt-divider {
-            border: none;
-            border-top: 1px dashed var(--glass-border);
-            margin: 12px 0;
-        }
-        .receipt-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 4px 0;
-            font-size: 13px;
-        }
-        .receipt-row .label {
-            color: var(--text-muted);
-        }
-        .receipt-row .value {
-            font-weight: 500;
-        }
-        .receipt-row .value.highlight {
-            color: var(--accent-light);
-            font-size: 16px;
-            font-weight: 700;
-        }
+        .receipt-title { text-align: center; font-size: 18px; font-weight: 700; color: var(--accent-light); margin-bottom: 4px; }
+        .receipt-subtitle { text-align: center; font-size: 11px; color: var(--text-muted); margin-bottom: 16px; }
+        .receipt-divider { border: none; border-top: 1px dashed var(--glass-border); margin: 12px 0; }
+        .receipt-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
+        .receipt-row .label { color: var(--text-muted); }
+        .receipt-row .value { font-weight: 500; }
+        .receipt-row .value.highlight { color: var(--accent-light); font-size: 16px; font-weight: 700; }
 
-        .history-item {
-            border-left: 2px solid var(--glass-border);
-            padding-left: 12px;
-            margin-bottom: 12px;
-        }
-        .history-item.payment {
-            border-left-color: var(--success);
-        }
-        .history-item.partial {
-            border-left-color: var(--warning);
-        }
-        .history-item.overdue {
-            border-left-color: var(--danger);
-        }
+        .history-item { border-left: 2px solid var(--glass-border); padding-left: 12px; margin-bottom: 12px; }
+        .history-item.payment { border-left-color: var(--success); }
+        .history-item.partial { border-left-color: var(--warning); }
+        .history-item.overdue { border-left-color: var(--danger); }
 
-        ::-webkit-scrollbar {
-            width: 3px;
-        }
-        ::-webkit-scrollbar-track {
-            background: transparent;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: rgba(255,255,255,0.06);
-            border-radius: 2px;
-        }
+        ::-webkit-scrollbar { width: 3px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 2px; }
 
-        .flex-center {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .flex-between {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
+        .flex-center { display: flex; align-items: center; justify-content: center; }
+        .flex-between { display: flex; align-items: center; justify-content: space-between; }
         .gap-1 { gap: 4px; }
         .gap-2 { gap: 8px; }
         .gap-3 { gap: 12px; }
         .gap-4 { gap: 16px; }
-        .truncate {
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-        .text-gradient {
-            background: linear-gradient(135deg, var(--accent-light), #a78bfa);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
+        .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .text-gradient { background: linear-gradient(135deg, var(--accent-light), #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
         .text-center { text-align: center; }
         .text-muted { color: var(--text-muted); }
         .text-sm { font-size: 12px; }
@@ -764,61 +449,22 @@
             border: 1px solid rgba(99,102,241,0.2);
         }
 
-        .amort-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 12px;
-        }
-        .amort-table th,
-        .amort-table td {
-            padding: 8px 6px;
-            text-align: right;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
-        }
-        .amort-table th {
-            color: var(--text-muted);
-            font-weight: 500;
-            font-size: 10px;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-        }
-        .amort-table td {
-            color: var(--text-secondary);
-        }
-        .amort-table tr:hover td {
-            background: rgba(255,255,255,0.02);
-        }
+        .amort-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .amort-table th, .amort-table td { padding: 8px 6px; text-align: right; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .amort-table th { color: var(--text-muted); font-weight: 500; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
+        .amort-table td { color: var(--text-secondary); }
+        .amort-table tr:hover td { background: rgba(255,255,255,0.02); }
 
         @media (max-width: 480px) {
-            .payment-type-grid {
-                grid-template-columns: 1fr 1fr 1fr;
-            }
-            .modal-content {
-                padding: 16px;
-                max-width: 100%;
-                margin: 0;
-                border-radius: var(--radius-lg);
-            }
-            .receipt {
-                padding: 16px;
-            }
+            .payment-type-grid { grid-template-columns: 1fr 1fr 1fr; }
+            .modal-content { padding: 16px; max-width: 100%; margin: 0; border-radius: var(--radius-lg); }
+            .receipt { padding: 16px; }
         }
         @media print {
-            .bottom-nav, .fab, .back-btn, .btn {
-                display: none !important;
-            }
-            .receipt {
-                border: 1px solid #333;
-                background: #fff;
-                color: #000;
-            }
-            .receipt-title {
-                color: #4f46e5;
-                -webkit-text-fill-color: #4f46e5;
-            }
-            body {
-                background: #fff;
-            }
+            .bottom-nav, .fab, .back-btn, .btn { display: none !important; }
+            .receipt { border: 1px solid #333; background: #fff; color: #000; }
+            .receipt-title { color: #4f46e5; -webkit-text-fill-color: #4f46e5; }
+            body { background: #fff; }
         }
     </style>
 </head>
@@ -827,8 +473,8 @@
 
 <script type="text/babel">
     // ============================================================
-    // LOANS W v9.2 - SISTEMA PROFESIONAL DE ABONOS Y PAGOS
-    // CÓDIGO COMPLETO Y FUNCIONAL
+    // LOANS W v9.4 - SISTEMA FINANCIERO COMPLETO
+    // PARTE 1/3 - INFRAESTRUCTURA Y SERVICIOS
     // ============================================================
 
     const { useState, useEffect, useMemo, useCallback, useContext, createContext, useRef, useReducer } = React;
@@ -872,6 +518,11 @@
         return dt.toLocaleDateString('es-CO', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
     };
 
+    const getMonthName = (month) => {
+        const names = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+        return names[month - 1] || month;
+    };
+
     const getRelativeDay = (d) => {
         const today = todayLocal();
         const due = parseLocalDate(d);
@@ -895,7 +546,7 @@
     const generateId = () => Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
 
     // ============================================================
-    // 1.1 NORMALIZACIÓN MONETARIA - FUNCIÓN GLOBAL
+    // 1.1 NORMALIZACIÓN MONETARIA
     // ============================================================
 
     const MONETARY_CONFIG = {
@@ -936,7 +587,7 @@
     };
 
     // ============================================================
-    // 2. ICONOS SVG (COMPLETOS)
+    // 2. ICONOS SVG
     // ============================================================
 
     const IconSVG = {
@@ -975,15 +626,13 @@
         Copy: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>,
         FileText: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>,
         CreditCard: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>,
-        TrendingDown: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg>,
-        RefreshCw: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>,
         Share2: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>,
         History: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
         Percent: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>,
     };
 
     // ============================================================
-    // 3. CLASES Y MOTORES CON MONEDA NORMALIZADA
+    // 3. CLASES Y MOTORES
     // ============================================================
 
     // 3.1 MoraEngine
@@ -1212,7 +861,7 @@
         }
     }
 
-    // 3.4 PaymentDistributionEngine - DISTRIBUCIÓN DE PAGOS ENTRE CUOTAS
+    // 3.4 PaymentDistributionEngine
     class PaymentDistributionEngine {
         static distributePayment(installments, paymentAmount, selectedInstallmentId = null) {
             const remainingAmount = normalizeMoney(paymentAmount);
@@ -1351,103 +1000,7 @@
         }
     }
 
-    // 3.6 FinanceEngine
-    class FinanceEngine {
-        static calculateMetrics({ installments, payments, loans, expenses, capitalMovements, year, month }) {
-            const sd = new Date(Date.UTC(year, month - 1, 1, 12, 0, 0, 0));
-            const ed = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
-
-            const mi = installments.filter(i => {
-                const d = new Date(i.dueDate);
-                return d >= sd && d <= ed;
-            });
-
-            const mp = payments.filter(p => {
-                const d = new Date(p.paymentDate);
-                return d >= sd && d <= ed;
-            });
-
-            const me = expenses.filter(e => {
-                const d = new Date(e.date);
-                return d >= sd && d <= ed;
-            });
-
-            const expectedAmount = normalizeMoney(mi.reduce((s, i) => s + (i.totalAmount || 0), 0));
-
-            let collectedCapital = 0, collectedInterest = 0, collectedMora = 0;
-            for (const p of mp) {
-                const bd = p.breakdown || {};
-                collectedCapital += normalizeMoney(bd.capital || 0);
-                collectedInterest += normalizeMoney(bd.interest || 0);
-                collectedMora += normalizeMoney(bd.mora || 0);
-            }
-
-            const collectedAmount = normalizeMoney(collectedCapital + collectedInterest + collectedMora);
-            const totalExpenses = normalizeMoney(me.reduce((s, e) => s + (e.amount || 0), 0));
-
-            const validLoanIds = new Set(loans.map(l => l.id));
-            const validInstallmentIds = new Set(installments.map(i => i.id));
-            const validExpenseIds = new Set(expenses.map(e => e.id));
-
-            const allCapitalIn = normalizeMoney(capitalMovements.filter(m => {
-                if (m.type !== 'initial' && m.type !== 'income') return false;
-                if (m.referenceType && m.referenceId) {
-                    if (m.referenceType === 'loan' && !validLoanIds.has(m.referenceId)) return false;
-                    if (m.referenceType === 'expense' && !validExpenseIds.has(m.referenceId)) return false;
-                }
-                return true;
-            }).reduce((s, m) => s + (m.amount || 0), 0));
-
-            const allCapitalOut = normalizeMoney(capitalMovements.filter(m => {
-                if (m.type !== 'loan' && m.type !== 'expense' && m.type !== 'withdrawal') return false;
-                if (m.referenceType && m.referenceId) {
-                    if (m.referenceType === 'loan' && !validLoanIds.has(m.referenceId)) return false;
-                    if (m.referenceType === 'expense' && !validExpenseIds.has(m.referenceId)) return false;
-                }
-                return true;
-            }).reduce((s, m) => s + (m.amount || 0), 0));
-
-            const allPaymentsIn = normalizeMoney(capitalMovements.filter(m => {
-                if (m.type !== 'payment') return false;
-                if (m.referenceType === 'payment' && m.referenceId && !validInstallmentIds.has(m.referenceId)) return false;
-                return true;
-            }).reduce((s, m) => s + (m.amount || 0), 0));
-
-            const totalCapital = normalizeMoney(allCapitalIn - allCapitalOut + allPaymentsIn);
-            const totalLent = normalizeMoney(loans.filter(l => l.status === 'active' || l.status === 'overdue')
-                .reduce((s, l) => s + (l.principal || 0), 0));
-            const availableCapital = normalizeMoney(totalCapital - totalLent);
-
-            const overdueAmount = normalizeMoney(mi.filter(i => i.status === 'overdue' || i.status === 'partial')
-                .reduce((s, i) => {
-                    const rem = normalizeMoney(i.remainingAmount || i.totalAmount || 0);
-                    const moraRem = normalizeMoney(MoraEngine.calculateMoraRemaining(i));
-                    return s + rem + moraRem;
-                }, 0));
-
-            const pendingAmount = normalizeMoney(expectedAmount - collectedAmount);
-            const profit = normalizeMoney(collectedInterest + collectedMora - totalExpenses);
-            const compliance = expectedAmount > 0 ? normalizeMoney((collectedAmount / expectedAmount) * 100) : 0;
-
-            return {
-                expectedAmount: normalizeMoney(expectedAmount),
-                collectedAmount: normalizeMoney(collectedAmount),
-                collectedCapital: normalizeMoney(collectedCapital),
-                collectedInterest: normalizeMoney(collectedInterest),
-                collectedMora: normalizeMoney(collectedMora),
-                totalExpenses: normalizeMoney(totalExpenses),
-                pendingAmount: normalizeMoney(pendingAmount),
-                overdueAmount: normalizeMoney(overdueAmount),
-                totalCapital: normalizeMoney(totalCapital),
-                totalLent: normalizeMoney(totalLent),
-                availableCapital: normalizeMoney(availableCapital),
-                profit: normalizeMoney(profit),
-                compliance: normalizeMoney(compliance)
-            };
-        }
-    }
-
-    // 3.7 PaymentAllocationEngine
+    // 3.6 PaymentAllocationEngine
     class PaymentAllocationEngine {
         static PAYMENT_TYPES = {
             FULL_INSTALLMENT: 'full_installment',
@@ -1492,6 +1045,105 @@
                 method: paymentResult.method,
                 note: paymentResult.note
             };
+        }
+    }
+
+    // ============================================================
+    // 3.7 NUEVO: CollectionHistoryEngine - HISTORIAL DE COBROS
+    // ============================================================
+
+    class CollectionHistoryEngine {
+        /**
+         * Obtiene el resumen de cobros para un período específico
+         * BASADO EN FECHA REAL DE PAGO, NO en fecha de vencimiento
+         */
+        static getPeriodSummary(payments, installments, loans, clients, year, month) {
+            const sd = new Date(Date.UTC(year, month - 1, 1, 12, 0, 0, 0));
+            const ed = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+
+            // Filtrar pagos por fecha REAL de recepción
+            const periodPayments = payments.filter(p => {
+                const d = new Date(p.paymentDate);
+                return d >= sd && d <= ed;
+            });
+
+            // Calcular totales
+            let totalCapital = 0, totalInterest = 0, totalMora = 0;
+            const paymentsByClient = {};
+
+            for (const p of periodPayments) {
+                const bd = p.breakdown || {};
+                const cap = normalizeMoney(bd.capital || 0);
+                const int = normalizeMoney(bd.interest || 0);
+                const mor = normalizeMoney(bd.mora || 0);
+                
+                totalCapital += cap;
+                totalInterest += int;
+                totalMora += mor;
+
+                const clientId = p.clientId;
+                if (!paymentsByClient[clientId]) {
+                    paymentsByClient[clientId] = {
+                        clientId,
+                        total: 0,
+                        payments: []
+                    };
+                }
+                paymentsByClient[clientId].total += cap + int + mor;
+                paymentsByClient[clientId].payments.push({
+                    id: p.id,
+                    amount: cap + int + mor,
+                    capital: cap,
+                    interest: int,
+                    mora: mor,
+                    date: p.paymentDate,
+                    method: p.method,
+                    loanId: p.loanId,
+                    installmentId: p.installmentId,
+                    note: p.note
+                });
+            }
+
+            const totalCollected = normalizeMoney(totalCapital + totalInterest + totalMora);
+
+            // Obtener cuotas del período (para calcular meta)
+            const periodInstallments = installments.filter(i => {
+                const d = new Date(i.dueDate);
+                return d >= sd && d <= ed && i.status !== 'cancelled';
+            });
+            const expectedAmount = normalizeMoney(periodInstallments.reduce((s, i) => s + (i.totalAmount || 0), 0));
+
+            return {
+                year,
+                month,
+                monthName: getMonthName(month),
+                startDate: sd.toISOString(),
+                endDate: ed.toISOString(),
+                expectedAmount,
+                collectedAmount: totalCollected,
+                collectedCapital: normalizeMoney(totalCapital),
+                collectedInterest: normalizeMoney(totalInterest),
+                collectedMora: normalizeMoney(totalMora),
+                pendingAmount: normalizeMoney(expectedAmount - totalCollected),
+                compliance: expectedAmount > 0 ? normalizeMoney((totalCollected / expectedAmount) * 100) : 0,
+                paymentsCount: periodPayments.length,
+                clientsCount: Object.keys(paymentsByClient).length,
+                paymentsByClient,
+                payments: periodPayments.sort((a, b) => new Date(a.paymentDate) - new Date(b.paymentDate))
+            };
+        }
+
+        /**
+         * Obtiene todos los períodos con actividad
+         */
+        static getAvailablePeriods(payments) {
+            const periods = new Set();
+            for (const p of payments) {
+                const d = new Date(p.paymentDate);
+                const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+                periods.add(key);
+            }
+            return Array.from(periods).sort();
         }
     }
 
@@ -1568,12 +1220,29 @@
     }
 
     // ============================================================
-    // 5. DATABASE
+    // 5. DATABASE - ACTUALIZADA
     // ============================================================
 
-    const DB_VERSION = 9;
+    const DB_VERSION = 10;
     const db = new Dexie('LoansW_DB');
 
+    db.version(10).stores({
+        users: '++id, &document, email, createdAt',
+        clients: '++id, userId, fullName, document, phone, email, address, city, neighborhood, company, occupation, references, notes, status, photo, createdAt, updatedAt',
+        loans: '++id, userId, clientId, loanNumber, principal, interestType, interestRate, installmentsCount, frequency, startDate, dueDateType, moraType, moraRate, status, totalRepayment, totalPaid, currentBalance, progress, createdAt, updatedAt',
+        installments: '++id, loanId, number, startDate, dueDate, principal, interest, totalAmount, paidAmount, remainingAmount, moraDays, moraAmount, moraPaid, moraRemaining, status',
+        payments: '++id, loanId, clientId, installmentId, amount, paymentDate, method, note, breakdown, paymentType, receiptNumber, isFullPayment, surplus, createdAt, updatedAt',
+        capitalMovements: '++id, userId, type, amount, date, description, referenceType, referenceId, createdAt',
+        expenses: '++id, userId, category, amount, date, time, description, provider, paymentMethod, notes, receiptPhoto, capitalMovementId, createdAt, updatedAt',
+        expenseCategories: '++id, name',
+        settings: '&userId',
+        auditLog: '++id, userId, timestamp, entityType, entityId, action, description, before, after, details',
+        sessions: '++id, userId, token, expiresAt, createdAt',
+        collectionPeriods: '++id, userId, year, month, expectedAmount, collectedAmount, pendingAmount, compliance, data, createdAt, updatedAt',
+        simulations: '++id, userId, name, data, createdAt'
+    });
+
+    // Migración desde v9
     db.version(9).stores({
         users: '++id, &document, email, createdAt',
         clients: '++id, userId, fullName, document, phone, email, address, city, neighborhood, company, occupation, references, notes, status, photo, createdAt, updatedAt',
@@ -1588,53 +1257,33 @@
         sessions: '++id, userId, token, expiresAt, createdAt',
         collectionPeriods: '++id, userId, year, month, expectedAmount, collectedAmount, pendingAmount, overdueAmount, compliance, createdAt',
         simulations: '++id, userId, name, data, createdAt'
-    });
-
-    db.version(8).stores({
-        users: '++id, &document, email, createdAt',
-        clients: '++id, userId, fullName, document, phone, email, address, city, neighborhood, company, occupation, references, notes, status, photo, createdAt, updatedAt',
-        loans: '++id, userId, clientId, loanNumber, principal, interestType, interestRate, installmentsCount, frequency, startDate, dueDateType, moraType, moraRate, status, totalRepayment, totalPaid, currentBalance, progress, createdAt, updatedAt',
-        installments: '++id, loanId, number, startDate, dueDate, principal, interest, totalAmount, paidAmount, remainingAmount, moraDays, moraAmount, moraPaid, status',
-        payments: '++id, loanId, clientId, installmentId, amount, paymentDate, method, note, breakdown, createdAt',
-        capitalMovements: '++id, userId, type, amount, date, description, referenceType, referenceId, createdAt',
-        expenses: '++id, userId, category, amount, date, time, description, provider, paymentMethod, notes, receiptPhoto, capitalMovementId, createdAt, updatedAt',
-        expenseCategories: '++id, name',
-        settings: '&userId',
-        auditLog: '++id, userId, timestamp, entityType, entityId, action, description',
-        sessions: '++id, userId, token, expiresAt, createdAt',
-        collectionPeriods: '++id, userId, year, month, expectedAmount, collectedAmount, pendingAmount, overdueAmount, compliance, createdAt',
-        simulations: '++id, userId, name, data, createdAt'
     }).upgrade(async tx => {
-        console.log('[DB] Migrando a v9...');
+        console.log('[DB] Migrando a v10...');
         try {
-            const payments = await tx.table('payments').toArray();
-            for (const p of payments) {
+            // Actualizar collectionPeriods a nuevo formato
+            const periods = await tx.table('collectionPeriods').toArray();
+            for (const p of periods) {
                 const update = {};
-                if (!p.paymentType) update.paymentType = 'full_installment';
-                if (!p.receiptNumber) update.receiptNumber = `REC-${Date.now().toString(36).toUpperCase()}`;
-                if (p.isFullPayment === undefined) {
-                    const bd = p.breakdown || {};
-                    const total = normalizeMoney((bd.capital || 0) + (bd.interest || 0) + (bd.mora || 0));
-                    const amount = normalizeMoney(p.amount || 0);
-                    update.isFullPayment = Math.abs(total - amount) < 0.01;
+                if (p.data === undefined) {
+                    update.data = JSON.stringify({
+                        collectedCapital: p.collectedAmount || 0,
+                        collectedInterest: 0,
+                        collectedMora: p.overdueAmount || 0,
+                        paymentsCount: 0,
+                        clientsCount: 0,
+                        paymentsByClient: {}
+                    });
                 }
-                if (p.surplus === undefined) update.surplus = 0;
-                if (!p.createdAt) update.createdAt = p.paymentDate || new Date().toISOString();
-                if (!p.updatedAt) update.updatedAt = p.paymentDate || new Date().toISOString();
+                if (!p.createdAt) update.createdAt = new Date().toISOString();
+                if (!p.updatedAt) update.updatedAt = new Date().toISOString();
                 if (Object.keys(update).length > 0) {
-                    await tx.table('payments').update(p.id, update);
+                    await tx.table('collectionPeriods').update(p.id, update);
                 }
-            }
-
-            const installments = await tx.table('installments').toArray();
-            for (const inst of installments) {
-                const moraRemaining = normalizeMoney((inst.moraAmount || 0) - (inst.moraPaid || 0));
-                await tx.table('installments').update(inst.id, { moraRemaining: Math.max(0, moraRemaining) });
             }
         } catch (err) {
-            console.error('[DB] Error en migración v9:', err);
+            console.error('[DB] Error en migración v10:', err);
         }
-        console.log('[DB] Migración a v9 completada');
+        console.log('[DB] Migración a v10 completada');
     });
 
     const initDatabase = async () => {
@@ -1667,42 +1316,6 @@
         }
     };
 
-    const cleanOrphanCapitalMovements = async (userId) => {
-        if (!userId) return;
-        try {
-            const allMovements = await db.capitalMovements.where({ userId }).toArray();
-            const allLoans = await db.loans.where({ userId }).toArray();
-            const allExpenses = await db.expenses.where({ userId }).toArray();
-            const loanIds = new Set(allLoans.map(l => l.id));
-            const expenseIds = new Set(allExpenses.map(e => e.id));
-
-            const allInstallments = [];
-            for (const loan of allLoans) {
-                const insts = await db.installments.where({ loanId: loan.id }).toArray();
-                allInstallments.push(...insts);
-            }
-            const installmentIds = new Set(allInstallments.map(i => i.id));
-
-            const toDelete = [];
-            for (const mov of allMovements) {
-                if (mov.referenceType === 'loan' && mov.referenceId && !loanIds.has(mov.referenceId)) {
-                    toDelete.push(mov.id);
-                } else if (mov.referenceType === 'payment' && mov.referenceId && !installmentIds.has(mov.referenceId)) {
-                    toDelete.push(mov.id);
-                } else if (mov.referenceType === 'expense' && mov.referenceId && !expenseIds.has(mov.referenceId)) {
-                    toDelete.push(mov.id);
-                }
-            }
-
-            if (toDelete.length > 0) {
-                await db.capitalMovements.bulkDelete(toDelete);
-                console.log(`[CLEAN] ${toDelete.length} movimientos huérfanos eliminados`);
-            }
-        } catch (err) {
-            console.error('[CLEAN] Error limpiando huérfanos:', err);
-        }
-    };
-
     // ============================================================
     // 6. COMPONENTES BASE
     // ============================================================
@@ -1730,14 +1343,17 @@
             setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 3500);
         }, []);
 
+        // ============================================================
+        // refreshAllData MEJORADO - Con reconciliación de capital
+        // ============================================================
         const refreshAllData = useCallback(async () => {
             if (!user?.id) return;
             setLoading(true);
             try {
                 await initDatabase();
                 const userId = user.id;
-                await cleanOrphanCapitalMovements(userId);
 
+                // Obtener TODOS los datos del usuario
                 const [c, l, ec, cp] = await Promise.all([
                     db.clients.where({ userId }).toArray(),
                     db.loans.where({ userId }).toArray(),
@@ -1751,10 +1367,14 @@
                 setCollectionPeriods(cp);
 
                 const loanIds = l.map(loan => loan.id);
+                let i = [];
+                let p = [];
+                
                 if (loanIds.length > 0) {
-                    let i = await db.installments.where('loanId').anyOf(loanIds).toArray();
-                    let p = await db.payments.where('loanId').anyOf(loanIds).toArray();
+                    i = await db.installments.where('loanId').anyOf(loanIds).toArray();
+                    p = await db.payments.where('loanId').anyOf(loanIds).toArray();
 
+                    // Actualizar mora en todas las cuotas
                     for (const inst of i) {
                         if (inst.status === 'paid' || inst.status === 'cancelled') continue;
                         const loan = l.find(lo => lo.id === inst.loanId);
@@ -1773,9 +1393,9 @@
                     }
 
                     i = await db.installments.where('loanId').anyOf(loanIds).toArray();
-                    setInstallments(i);
-                    setPayments(p);
+                    p = await db.payments.where('loanId').anyOf(loanIds).toArray();
 
+                    // Reconciliar préstamos
                     for (const loan of l) {
                         const loanInsts = i.filter(inst => inst.loanId === loan.id);
                         const allPaid = loanInsts.every(inst => inst.status === 'paid' || inst.status === 'cancelled');
@@ -1796,13 +1416,37 @@
                         if (newStatus !== loan.status) {
                             loan.status = newStatus;
                         }
+
+                        // Recalcular totalPaid desde pagos reales
+                        const loanPayments = p.filter(pay => pay.loanId === loan.id);
+                        let totalPaidFromPayments = 0;
+                        for (const pay of loanPayments) {
+                            const bd = pay.breakdown || {};
+                            totalPaidFromPayments += normalizeMoney((bd.capital || 0) + (bd.interest || 0) + (bd.mora || 0));
+                        }
+                        
+                        const newTotalPaid = normalizeMoney(totalPaidFromPayments);
+                        const newCurrentBalance = normalizeMoney(Math.max(0, (loan.totalRepayment || 0) - newTotalPaid));
+                        const newProgress = loan.totalRepayment > 0 ? normalizeMoney((newTotalPaid / loan.totalRepayment) * 100) : 0;
+
+                        if (Math.abs(newTotalPaid - (loan.totalPaid || 0)) > 0.01) {
+                            await db.loans.update(loan.id, {
+                                totalPaid: newTotalPaid,
+                                currentBalance: newCurrentBalance,
+                                progress: newProgress
+                            });
+                            loan.totalPaid = newTotalPaid;
+                            loan.currentBalance = newCurrentBalance;
+                            loan.progress = newProgress;
+                        }
                     }
                     setLoans([...l]);
-                } else {
-                    setInstallments([]);
-                    setPayments([]);
                 }
 
+                setInstallments(i);
+                setPayments(p);
+
+                // Obtener el resto de datos
                 const [e, cm, cfg] = await Promise.all([
                     db.expenses.where({ userId }).toArray(),
                     db.capitalMovements.where({ userId }).toArray(),
@@ -1813,6 +1457,7 @@
                 setCapitalMovements(cm);
                 setConfig(cfg || null);
 
+                // Audit logs
                 try {
                     const ar = await db.auditLog.where({ userId }).toArray();
                     ar.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
@@ -1821,13 +1466,83 @@
                     console.error('[AUDIT]', err);
                 }
 
-                setRefreshKey(k => k + 1);
+                // Reconciliar collectionPeriods - actualizar desde pagos reales
+                await CollectionHistoryEngine.reconcilePeriods(userId, p);
+
+                setRefreshKey(prev => prev + 1);
+
             } catch (err) {
                 console.error('[APP] Error refresh:', err);
                 addToast('Error al cargar datos: ' + (err.message || 'Error desconocido'), 'error');
             }
             setLoading(false);
         }, [user, addToast]);
+
+        // ============================================================
+        // Reconciliación de períodos de cobro
+        // ============================================================
+        CollectionHistoryEngine.reconcilePeriods = async (userId, payments) => {
+            try {
+                const periods = CollectionHistoryEngine.getAvailablePeriods(payments);
+                for (const period of periods) {
+                    const [year, month] = period.split('-').map(Number);
+                    // Obtener datos actuales
+                    const allLoans = await db.loans.where({ userId }).toArray();
+                    const allInstallments = [];
+                    for (const loan of allLoans) {
+                        const insts = await db.installments.where({ loanId: loan.id }).toArray();
+                        allInstallments.push(...insts);
+                    }
+                    const allClients = await db.clients.where({ userId }).toArray();
+                    
+                    const summary = CollectionHistoryEngine.getPeriodSummary(
+                        payments, allInstallments, allLoans, allClients, year, month
+                    );
+                    
+                    // Guardar/actualizar período
+                    const existing = await db.collectionPeriods.where({ userId, year, month }).first();
+                    if (existing) {
+                        await db.collectionPeriods.update(existing.id, {
+                            expectedAmount: summary.expectedAmount,
+                            collectedAmount: summary.collectedAmount,
+                            pendingAmount: summary.pendingAmount,
+                            compliance: summary.compliance,
+                            data: JSON.stringify({
+                                collectedCapital: summary.collectedCapital,
+                                collectedInterest: summary.collectedInterest,
+                                collectedMora: summary.collectedMora,
+                                paymentsCount: summary.paymentsCount,
+                                clientsCount: summary.clientsCount,
+                                paymentsByClient: summary.paymentsByClient
+                            }),
+                            updatedAt: new Date().toISOString()
+                        });
+                    } else {
+                        await db.collectionPeriods.add({
+                            userId,
+                            year,
+                            month,
+                            expectedAmount: summary.expectedAmount,
+                            collectedAmount: summary.collectedAmount,
+                            pendingAmount: summary.pendingAmount,
+                            compliance: summary.compliance,
+                            data: JSON.stringify({
+                                collectedCapital: summary.collectedCapital,
+                                collectedInterest: summary.collectedInterest,
+                                collectedMora: summary.collectedMora,
+                                paymentsCount: summary.paymentsCount,
+                                clientsCount: summary.clientsCount,
+                                paymentsByClient: summary.paymentsByClient
+                            }),
+                            createdAt: new Date().toISOString(),
+                            updatedAt: new Date().toISOString()
+                        });
+                    }
+                }
+            } catch (err) {
+                console.error('[RECONCILE] Error:', err);
+            }
+        };
 
         const addAuditLog = useCallback(async (et, eid, action, desc = '', before = null, after = null, details = null) => {
             if (!user?.id) return;
@@ -1963,6 +1678,14 @@
             </div>
         </div>
     );
+
+    // ============================================================
+    // FIN PARTE 1/3 — CONTINÚA PARTE 2/3
+    // ============================================================
+    // ============================================================
+    // LOANS W v9.4 - SISTEMA FINANCIERO COMPLETO
+    // PARTE 2/3 - COMPONENTES DE PAGOS Y PREFERENCIAS
+    // ============================================================
 
     // ============================================================
     // 8. COMPONENT: PAYMENT TYPES
@@ -2504,7 +2227,7 @@
     };
 
     // ============================================================
-    // 12. COMPONENT: PAYMENT MODAL - CORREGIDO
+    // 12. COMPONENT: PAYMENT MODAL
     // ============================================================
 
     const PaymentModal = ({
@@ -2830,6 +2553,7 @@
                 });
 
                 await refreshAllData();
+                
                 setPaymentResult({ ...previewResult, id: 'payment_saved' });
                 setStep('receipt');
                 addToast(
@@ -3667,18 +3391,173 @@
     };
 
     // ============================================================
-    // 17. COMPONENT: DASHBOARD PAGE
+    // 17. COMPONENT: PREFERENCES PAGE (CORREGIDO - COMPONENTE INDEPENDIENTE)
+    // ============================================================
+
+    const PreferencesPage = ({ onBack, onSave, initialConfig }) => {
+        const { refreshAllData, addToast, user } = useApp();
+        const [lp, setLp] = useState({
+            defaultInterestRate: initialConfig?.defaultInterestRate || 20,
+            defaultFrequency: initialConfig?.defaultFrequency || 'monthly',
+            defaultInstallments: initialConfig?.defaultInstallments || 5
+        });
+
+        const handleSave = async () => {
+            try {
+                await initDatabase();
+                const ex = await db.settings.get(user.id);
+                const nc = { ...(ex || {}), ...lp, userId: user.id };
+                await db.settings.put(nc);
+                await verifyPersistence(db.settings, user.id);
+                await refreshAllData();
+                addToast('Preferencias guardadas correctamente', 'success');
+                if (onSave) onSave();
+            } catch (err) {
+                addToast('No se pudieron guardar las preferencias.', 'error');
+                console.error('[PREF ERROR]', err);
+            }
+        };
+
+        return (
+            <div style={{ padding: '20px', paddingBottom: '120px', background: 'var(--bg-deep)', minHeight: '100vh' }}>
+                <button onClick={onBack} className="back-btn">
+                    <IconSVG.ArrowLeft /> Volver
+                </button>
+                <div style={{ fontSize: '24px', fontWeight: '700', marginBottom: '20px', color: 'var(--text-primary)' }}>
+                    Preferencias
+                </div>
+                <div className="glass-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px', background: 'var(--bg-elevated)' }}>
+                    <div>
+                        <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                            Tasa predeterminada (%)
+                        </label>
+                        <input
+                            type="number"
+                            value={lp.defaultInterestRate}
+                            onChange={e => setLp({ ...lp, defaultInterestRate: parseFloat(e.target.value) || 0 })}
+                            className="glass-input"
+                            min="0"
+                            max="100"
+                            step="0.1"
+                        />
+                    </div>
+                    <div>
+                        <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                            Frecuencia predeterminada
+                        </label>
+                        <select value={lp.defaultFrequency} onChange={e => setLp({ ...lp, defaultFrequency: e.target.value })}
+                            className="glass-input">
+                            <option value="daily">Diaria</option>
+                            <option value="weekly">Semanal</option>
+                            <option value="biweekly">Quincenal</option>
+                            <option value="monthly">Mensual</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                            Cuotas predeterminadas
+                        </label>
+                        <input
+                            type="number"
+                            value={lp.defaultInstallments}
+                            onChange={e => setLp({ ...lp, defaultInstallments: parseInt(e.target.value) || 1 })}
+                            className="glass-input"
+                            min="1"
+                            max="120"
+                        />
+                    </div>
+                    <button className="btn btn-primary" style={{ width: '100%', marginTop: '8px' }} onClick={handleSave}>
+                        <IconSVG.Check /> Guardar preferencias
+                    </button>
+                </div>
+            </div>
+        );
+    };
+
+    // ============================================================
+    // FIN PARTE 2/3 — CONTINÚA PARTE 3/3
+    // ============================================================
+    // ============================================================
+    // LOANS W v9.4 - SISTEMA FINANCIERO COMPLETO
+    // PARTE 3/3 - COMPONENTES DE UI Y APLICACIÓN PRINCIPAL
+    // ============================================================
+
+    // ============================================================
+    // 18. COMPONENT: DASHBOARD PAGE - CON HISTORIAL DE COBROS
     // ============================================================
 
     const DashboardPage = ({ onNavigate }) => {
-        const { loans, installments, payments, expenses, capitalMovements, clients, auditLogs, loading, refreshKey } = useApp();
+        const { loans, installments, payments, expenses, capitalMovements, clients, collectionPeriods, loading, refreshKey } = useApp();
         const now = new Date();
+        const currentYear = now.getUTCFullYear();
+        const currentMonth = now.getUTCMonth() + 1;
 
-        const metrics = useMemo(() => FinanceEngine.calculateMetrics({
-            installments, payments, loans, expenses, capitalMovements,
-            year: now.getUTCFullYear(), month: now.getUTCMonth() + 1
-        }), [installments, payments, loans, expenses, capitalMovements, refreshKey]);
+        // Obtener resumen del mes actual desde CollectionHistoryEngine
+        const currentPeriodSummary = useMemo(() => {
+            return CollectionHistoryEngine.getPeriodSummary(
+                payments, installments, loans, clients, currentYear, currentMonth
+            );
+        }, [payments, installments, loans, clients, currentYear, currentMonth, refreshKey]);
 
+        // Obtener períodos disponibles
+        const availablePeriods = useMemo(() => {
+            return CollectionHistoryEngine.getAvailablePeriods(payments);
+        }, [payments, refreshKey]);
+
+        // Calcular métricas financieras
+        const metrics = useMemo(() => {
+            // Recalcular capital total desde movimientos reales
+            const validLoanIds = new Set(loans.map(l => l.id));
+            const validInstallmentIds = new Set(installments.map(i => i.id));
+            const validExpenseIds = new Set(expenses.map(e => e.id));
+
+            const allCapitalIn = normalizeMoney(capitalMovements.filter(m => {
+                if (m.type !== 'initial' && m.type !== 'income') return false;
+                if (m.referenceType && m.referenceId) {
+                    if (m.referenceType === 'loan' && !validLoanIds.has(m.referenceId)) return false;
+                    if (m.referenceType === 'expense' && !validExpenseIds.has(m.referenceId)) return false;
+                }
+                return true;
+            }).reduce((s, m) => s + (m.amount || 0), 0));
+
+            const allCapitalOut = normalizeMoney(capitalMovements.filter(m => {
+                if (m.type !== 'loan' && m.type !== 'expense' && m.type !== 'withdrawal') return false;
+                if (m.referenceType && m.referenceId) {
+                    if (m.referenceType === 'loan' && !validLoanIds.has(m.referenceId)) return false;
+                    if (m.referenceType === 'expense' && !validExpenseIds.has(m.referenceId)) return false;
+                }
+                return true;
+            }).reduce((s, m) => s + (m.amount || 0), 0));
+
+            const allPaymentsIn = normalizeMoney(capitalMovements.filter(m => {
+                if (m.type !== 'payment') return false;
+                if (m.referenceType === 'payment' && m.referenceId && !validInstallmentIds.has(m.referenceId)) return false;
+                return true;
+            }).reduce((s, m) => s + (m.amount || 0), 0));
+
+            const totalCapital = normalizeMoney(allCapitalIn - allCapitalOut + allPaymentsIn);
+            const totalLent = normalizeMoney(loans.filter(l => l.status === 'active' || l.status === 'overdue')
+                .reduce((s, l) => s + (l.principal || 0), 0));
+            const availableCapital = normalizeMoney(totalCapital - totalLent);
+
+            // Utilidad del mes
+            const expensesMonth = expenses.filter(e => {
+                const d = new Date(e.date);
+                return d.getUTCMonth() === currentMonth - 1 && d.getUTCFullYear() === currentYear;
+            });
+            const totalExpenses = normalizeMoney(expensesMonth.reduce((s, e) => s + (e.amount || 0), 0));
+            const profit = normalizeMoney(currentPeriodSummary.collectedInterest + currentPeriodSummary.collectedMora - totalExpenses);
+
+            return {
+                totalCapital,
+                availableCapital,
+                totalLent,
+                profit,
+                totalExpenses
+            };
+        }, [loans, installments, payments, capitalMovements, expenses, currentYear, currentMonth, refreshKey]);
+
+        // Calcular cuotas del día
         const today = todayLocal();
         const dueToday = useMemo(() => installments.filter(i => {
             if (i.status === 'paid' || i.status === 'cancelled') return false;
@@ -3686,13 +3565,16 @@
             return getCalendarDaysDiff(today, due) === 0;
         }), [installments, refreshKey]);
 
+        // Cuotas vencidas
         const overdueList = useMemo(() => installments.filter(i => i.status === 'overdue')
             .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate)), [installments, refreshKey]);
 
+        // Total mora
         const totalMora = useMemo(() => installments
             .filter(i => i.status === 'overdue' || i.status === 'partial')
             .reduce((s, i) => s + MoraEngine.calculateMoraRemaining(i), 0), [installments, refreshKey]);
 
+        // Próximos cobros (7 días)
         const upcomingCollections = useMemo(() => {
             const nw = new Date(today);
             nw.setUTCDate(nw.getUTCDate() + 7);
@@ -3703,10 +3585,12 @@
             }).sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate)).slice(0, 5);
         }, [installments, refreshKey]);
 
+        // Pagos recientes
         const recentPayments = useMemo(() => payments
             .sort((a, b) => new Date(b.paymentDate || b.createdAt) - new Date(a.paymentDate || a.createdAt))
             .slice(0, 5), [payments, refreshKey]);
 
+        // Alertas
         const alerts = useMemo(() => {
             const a = [];
             if (overdueList.length > 0) a.push({ type: 'danger', msg: `${overdueList.length} cuotas vencidas`, icon: <IconSVG.Clock /> });
@@ -3720,6 +3604,22 @@
             return h < 12 ? 'Buenos días' : h < 18 ? 'Buenas tardes' : 'Buenas noches';
         };
 
+        // Clientes que pagaron este mes
+        const clientsWhoPaid = useMemo(() => {
+            const result = [];
+            const clientMap = currentPeriodSummary.paymentsByClient || {};
+            for (const clientId in clientMap) {
+                const client = clients.find(c => c.id === parseInt(clientId));
+                const data = clientMap[clientId];
+                result.push({
+                    client: client || { fullName: 'Cliente desconocido', id: clientId },
+                    total: data.total,
+                    payments: data.payments || []
+                });
+            }
+            return result.sort((a, b) => b.total - a.total);
+        }, [currentPeriodSummary, clients, refreshKey]);
+
         if (loading) return <div style={{ padding: '20px' }}>{[1, 2, 3, 4].map(i => <SkeletonCard key={i} />)}</div>;
 
         return (
@@ -3731,6 +3631,7 @@
                     </div>
                 </div>
 
+                {/* Resumen financiero */}
                 <div style={{ marginBottom: '14px' }}>
                     <div style={{
                         fontSize: '11px',
@@ -3771,7 +3672,7 @@
                                 <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Por cobrar</span>
                             </div>
                             <div style={{ fontSize: '19px', fontWeight: '700', color: 'var(--warning)' }}>
-                                {formatCurrency(metrics.pendingAmount)}
+                                {formatCurrency(currentPeriodSummary.pendingAmount)}
                             </div>
                         </div>
                         <div className="glass-card" style={{ padding: '14px' }}>
@@ -3790,28 +3691,45 @@
                     </div>
                 </div>
 
+                {/* PROGRESO DE COBROS - CORREGIDO CON HISTORIAL */}
                 <div className="glass-card" style={{ padding: '16px', marginBottom: '14px' }} onClick={() => onNavigate('collections')}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                         <span style={{ fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: '600', letterSpacing: '0.04em' }}>
-                            Progreso de cobros
+                            Progreso de cobros - {getMonthName(currentMonth)} {currentYear}
                         </span>
-                        <span className="badge badge-info">{metrics.compliance.toFixed(0)}%</span>
+                        <span className="badge badge-info">{currentPeriodSummary.compliance.toFixed(0)}%</span>
                     </div>
                     <div style={{ fontSize: '22px', fontWeight: '700', marginBottom: '4px' }}>
-                        {formatCurrency(metrics.collectedAmount)}
+                        {formatCurrency(currentPeriodSummary.collectedAmount)}
                         <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '400' }}>
-                            de {formatCurrency(metrics.expectedAmount)}
+                            de {formatCurrency(currentPeriodSummary.expectedAmount)}
                         </span>
                     </div>
                     <div className="progress-bar" style={{ height: '9px', marginBottom: '8px' }}>
-                        <div className="progress-fill" style={{ width: `${Math.min(100, metrics.compliance)}%` }} />
+                        <div className="progress-fill" style={{ width: `${Math.min(100, currentPeriodSummary.compliance)}%` }} />
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-muted)' }}>
-                        <span>Cobrado: <span style={{ color: 'var(--success)', fontWeight: '600' }}>{formatCurrency(metrics.collectedAmount)}</span></span>
-                        <span>Vencido: <span style={{ color: 'var(--danger)', fontWeight: '600' }}>{formatCurrency(metrics.overdueAmount)}</span></span>
+                        <span>Cobrado: <span style={{ color: 'var(--success)', fontWeight: '600' }}>{formatCurrency(currentPeriodSummary.collectedAmount)}</span></span>
+                        <span>Pendiente: <span style={{ color: 'var(--warning)', fontWeight: '600' }}>{formatCurrency(currentPeriodSummary.pendingAmount)}</span></span>
+                        <span>Pagos: <span style={{ fontWeight: '600' }}>{currentPeriodSummary.paymentsCount}</span></span>
                     </div>
+                    {currentPeriodSummary.collectedAmount > currentPeriodSummary.expectedAmount && (
+                        <div style={{
+                            marginTop: '8px',
+                            padding: '6px 12px',
+                            background: 'rgba(16,185,129,0.08)',
+                            borderRadius: 'var(--radius-sm)',
+                            color: 'var(--success-light)',
+                            fontSize: '11px',
+                            fontWeight: '500',
+                            textAlign: 'center'
+                        }}>
+                            ✅ Meta superada en {formatCurrency(currentPeriodSummary.collectedAmount - currentPeriodSummary.expectedAmount)}
+                        </div>
+                    )}
                 </div>
 
+                {/* Alertas */}
                 {alerts.length > 0 && (
                     <div style={{ marginBottom: '14px' }}>
                         <div className="flex-center gap-1 mb-2">
@@ -3844,6 +3762,44 @@
                     </div>
                 )}
 
+                {/* Clientes que pagaron este mes */}
+                {clientsWhoPaid.length > 0 && (
+                    <div style={{ marginBottom: '14px' }}>
+                        <div style={{
+                            fontSize: '11px',
+                            fontWeight: '600',
+                            color: 'var(--text-secondary)',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.04em',
+                            marginBottom: '8px'
+                        }}>
+                            Clientes que pagaron en {getMonthName(currentMonth)}
+                        </div>
+                        {clientsWhoPaid.slice(0, 5).map(item => (
+                            <div key={item.client.id} className="glass-card" style={{ padding: '10px', marginBottom: '4px' }}
+                                onClick={() => onNavigate('clientDetail', item.client.id)}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div>
+                                        <div style={{ fontSize: '13px', fontWeight: '500' }}>{item.client.fullName}</div>
+                                        <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                                            {item.payments.length} pago{item.payments.length > 1 ? 's' : ''}
+                                        </div>
+                                    </div>
+                                    <span style={{ fontSize: '14px', fontWeight: '700', color: 'var(--success)' }}>
+                                        {formatCurrency(item.total)}
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
+                        {clientsWhoPaid.length > 5 && (
+                            <div style={{ textAlign: 'center', fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                                + {clientsWhoPaid.length - 5} clientes más
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Pagos recientes */}
                 {recentPayments.length > 0 && (
                     <div style={{ marginBottom: '14px' }}>
                         <div className="flex-center gap-1 mb-2">
@@ -3868,9 +3824,9 @@
                                         <div>
                                             <div style={{ fontSize: '13px', fontWeight: '500' }}>{client?.fullName || 'Cliente'}</div>
                                             <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                                                {PaymentAllocationEngine.PAYMENT_TYPE_LABELS[p.paymentType] || p.paymentType}
-                                                {' · '}
                                                 {formatDate(p.paymentDate || p.createdAt)}
+                                                {' · '}
+                                                {PaymentAllocationEngine.PAYMENT_TYPE_LABELS[p.paymentType] || p.paymentType}
                                             </div>
                                         </div>
                                         <span style={{ fontSize: '14px', fontWeight: '700', color: 'var(--success)' }}>
@@ -3883,6 +3839,7 @@
                     </div>
                 )}
 
+                {/* Próximos cobros */}
                 {upcomingCollections.length > 0 && (
                     <div style={{ marginBottom: '14px' }}>
                         <div className="flex-center gap-1 mb-2" style={{ justifyContent: 'space-between' }}>
@@ -3923,7 +3880,7 @@
     };
 
     // ============================================================
-    // 18. COMPONENT: CLIENTS PAGE
+    // 19. COMPONENT: CLIENTS PAGE
     // ============================================================
 
     const ClientsPage = ({ onNavigate }) => {
@@ -3969,8 +3926,7 @@
             <div style={{ padding: '20px', paddingBottom: '120px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                     <div style={{ fontSize: '26px', fontWeight: '700' }}>Clientes</div>
-                    <button className="btn btn-primary btn-sm" onClick={() => { setEditing(null);
-                        setShowForm(true); }}>
+                    <button className="btn btn-primary btn-sm" onClick={() => { setEditing(null); setShowForm(true); }}>
                         <IconSVG.Plus /> Nuevo
                     </button>
                 </div>
@@ -3994,8 +3950,7 @@
                         icon={<IconSVG.Users />}
                         title="No hay clientes"
                         description="Comienza agregando tu primer cliente"
-                        action={<button className="btn btn-primary" onClick={() => { setEditing(null);
-                            setShowForm(true); }}>+ Agregar cliente</button>}
+                        action={<button className="btn btn-primary" onClick={() => { setEditing(null); setShowForm(true); }}>+ Agregar cliente</button>}
                     />
                 ) : (
                     filtered.map(c => {
@@ -4053,7 +4008,7 @@
     };
 
     // ============================================================
-    // 19. COMPONENT: CLIENT FORM
+    // 20. COMPONENT: CLIENT FORM
     // ============================================================
 
     const ClientForm = ({ initial, onSave }) => {
@@ -4072,8 +4027,7 @@
         });
 
         return (
-            <form onSubmit={e => { e.preventDefault();
-                onSave(f); }} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <form onSubmit={e => { e.preventDefault(); onSave(f); }} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <div>
                     <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
                         Nombre completo *
@@ -4213,7 +4167,7 @@
     };
 
     // ============================================================
-    // 20. COMPONENT: CLIENT DETAIL PAGE
+    // 21. COMPONENT: CLIENT DETAIL PAGE
     // ============================================================
 
     const ClientDetailPage = ({ id, onNavigate }) => {
@@ -4403,7 +4357,7 @@
     };
 
     // ============================================================
-    // 21. COMPONENT: LOANS PAGE
+    // 22. COMPONENT: LOANS PAGE
     // ============================================================
 
     const LoansPage = ({ onNavigate }) => {
@@ -4481,7 +4435,7 @@
     };
 
     // ============================================================
-    // 22. COMPONENT: CREATE LOAN PAGE
+    // 23. COMPONENT: CREATE LOAN PAGE
     // ============================================================
 
     const CreateLoanPage = ({ onNavigate, preselectedClientId, simulatorData }) => {
@@ -4705,7 +4659,7 @@
     };
 
     // ============================================================
-    // 23. COMPONENT: EDIT LOAN PAGE
+    // 24. COMPONENT: EDIT LOAN PAGE
     // ============================================================
 
     const EditLoanPage = ({ id, onNavigate }) => {
@@ -4967,7 +4921,7 @@
     };
 
     // ============================================================
-    // 24. COMPONENT: LOAN DETAIL PAGE (CON PAGOS INTEGRADOS)
+    // 25. COMPONENT: LOAN DETAIL PAGE
     // ============================================================
 
     const LoanDetailPage = ({ id, onNavigate }) => {
@@ -5000,11 +4954,15 @@
                 const instIds = loanInsts.map(i => i.id);
 
                 await db.transaction('rw', db.loans, db.installments, db.payments, db.capitalMovements, db.auditLog, async () => {
+                    // Eliminar pagos
                     if (instIds.length > 0) {
                         await db.payments.where('installmentId').anyOf(instIds).delete();
                     }
+                    // Eliminar cuotas
                     await db.installments.where({ loanId: loan.id }).delete();
+                    // Eliminar movimientos de capital del préstamo
                     await db.capitalMovements.where({ referenceType: 'loan', referenceId: loan.id }).delete();
+                    // Eliminar movimientos de pago huérfanos
                     const paymentMovements = await db.capitalMovements
                         .where({ referenceType: 'payment' })
                         .filter(m => instIds.includes(m.referenceId))
@@ -5012,10 +4970,13 @@
                     if (paymentMovements.length > 0) {
                         await db.capitalMovements.bulkDelete(paymentMovements.map(m => m.id));
                     }
+                    // Eliminar auditoría
                     await db.auditLog.where({ entityType: 'loan', entityId: loan.id }).delete();
+                    // Eliminar el préstamo
                     await db.loans.delete(loan.id);
                 });
 
+                // Limpiar movimientos huérfanos
                 await cleanOrphanCapitalMovements(user.id);
                 await refreshAllData();
                 addToast('Préstamo eliminado correctamente.', 'success');
@@ -5319,14 +5280,35 @@
     };
 
     // ============================================================
-    // 25. COMPONENT: COLLECTIONS PAGE
+    // 26. COMPONENT: COLLECTIONS PAGE
     // ============================================================
 
     const CollectionsPage = ({ onNavigate }) => {
-        const { loans, clients, installments } = useApp();
+        const { loans, clients, installments, payments, refreshKey } = useApp();
         const [filter, setFilter] = useState('all');
+        const [selectedPeriod, setSelectedPeriod] = useState(null);
         const today = todayLocal();
 
+        // Obtener períodos disponibles
+        const availablePeriods = useMemo(() => {
+            return CollectionHistoryEngine.getAvailablePeriods(payments);
+        }, [payments, refreshKey]);
+
+        // Período seleccionado o mes actual
+        const currentYear = today.getUTCFullYear();
+        const currentMonth = today.getUTCMonth() + 1;
+
+        const periodKey = selectedPeriod || `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+        const [year, month] = periodKey.split('-').map(Number);
+
+        // Obtener resumen del período
+        const periodSummary = useMemo(() => {
+            return CollectionHistoryEngine.getPeriodSummary(
+                payments, installments, loans, clients, year, month
+            );
+        }, [payments, installments, loans, clients, year, month, refreshKey]);
+
+        // Filtrar préstamos para la vista
         const data = loans.map(l => ({
             ...l,
             _c: clients.find(c => c.id === l.clientId),
@@ -5357,6 +5339,22 @@
             filter === 'paid' ? paid :
             data;
 
+        // Clientes que pagaron en el período seleccionado
+        const clientsWhoPaid = useMemo(() => {
+            const result = [];
+            const clientMap = periodSummary.paymentsByClient || {};
+            for (const clientId in clientMap) {
+                const client = clients.find(c => c.id === parseInt(clientId));
+                const data = clientMap[clientId];
+                result.push({
+                    client: client || { fullName: 'Cliente desconocido', id: clientId },
+                    total: data.total,
+                    payments: data.payments || []
+                });
+            }
+            return result.sort((a, b) => b.total - a.total);
+        }, [periodSummary, clients, refreshKey]);
+
         return (
             <div style={{ padding: '20px', paddingBottom: '120px' }}>
                 <div style={{ fontSize: '26px', fontWeight: '700', marginBottom: '14px' }}>
@@ -5370,6 +5368,104 @@
                     </button>
                 </div>
 
+                {/* Selector de período */}
+                <div style={{ display: 'flex', gap: '6px', marginBottom: '14px', overflow: 'auto', flexWrap: 'wrap' }}>
+                    <button
+                        className={`btn btn-ghost btn-sm ${!selectedPeriod ? 'active' : ''}`}
+                        style={{ background: !selectedPeriod ? 'rgba(99,102,241,0.15)' : 'transparent' }}
+                        onClick={() => setSelectedPeriod(null)}
+                    >
+                        Mes actual
+                    </button>
+                    {availablePeriods.slice(-6).map(p => {
+                        const [y, m] = p.split('-').map(Number);
+                        const isActive = selectedPeriod === p;
+                        return (
+                            <button
+                                key={p}
+                                className={`btn btn-ghost btn-sm ${isActive ? 'active' : ''}`}
+                                style={{ background: isActive ? 'rgba(99,102,241,0.15)' : 'transparent' }}
+                                onClick={() => setSelectedPeriod(p)}
+                            >
+                                {getMonthName(m)} {y}
+                            </button>
+                        );
+                    })}
+                </div>
+
+                {/* Resumen del período */}
+                <div className="glass-card" style={{ padding: '14px', marginBottom: '14px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', textAlign: 'center' }}>
+                        <div>
+                            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Cobrado</div>
+                            <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--success)' }}>
+                                {formatCurrency(periodSummary.collectedAmount)}
+                            </div>
+                        </div>
+                        <div>
+                            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Pendiente</div>
+                            <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--warning)' }}>
+                                {formatCurrency(periodSummary.pendingAmount)}
+                            </div>
+                        </div>
+                        <div>
+                            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Progreso</div>
+                            <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--accent-light)' }}>
+                                {periodSummary.compliance.toFixed(0)}%
+                            </div>
+                        </div>
+                    </div>
+                    <div className="progress-bar" style={{ height: '6px', marginTop: '8px' }}>
+                        <div className="progress-fill" style={{ width: `${Math.min(100, periodSummary.compliance)}%` }} />
+                    </div>
+                    <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center' }}>
+                        {periodSummary.paymentsCount} pagos · {periodSummary.clientsCount} clientes
+                        {periodSummary.collectedAmount > periodSummary.expectedAmount && (
+                            <span style={{ color: 'var(--success-light)', marginLeft: '8px' }}>
+                                ✅ Meta superada
+                            </span>
+                        )}
+                    </div>
+                </div>
+
+                {/* Clientes que pagaron en el período */}
+                {clientsWhoPaid.length > 0 && (
+                    <div style={{ marginBottom: '14px' }}>
+                        <div style={{
+                            fontSize: '11px',
+                            fontWeight: '600',
+                            color: 'var(--text-secondary)',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.04em',
+                            marginBottom: '8px'
+                        }}>
+                            Clientes que pagaron en {getMonthName(month)} {year}
+                        </div>
+                        {clientsWhoPaid.map(item => (
+                            <div key={item.client.id} className="glass-card" style={{ padding: '10px', marginBottom: '4px' }}
+                                onClick={() => onNavigate('clientDetail', item.client.id)}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div>
+                                        <div style={{ fontSize: '13px', fontWeight: '500' }}>{item.client.fullName}</div>
+                                        <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                                            {item.payments.length} pago{item.payments.length > 1 ? 's' : ''}
+                                            {item.payments.length > 0 && (
+                                                <span style={{ marginLeft: '6px' }}>
+                                                    · {formatDate(item.payments[0].date)}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <span style={{ fontSize: '14px', fontWeight: '700', color: 'var(--success)' }}>
+                                        {formatCurrency(item.total)}
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {/* Lista de préstamos por filtro */}
                 <div style={{ display: 'flex', gap: '6px', marginBottom: '14px', overflow: 'auto' }}>
                     {[
                         { id: 'all', label: 'Todos' },
@@ -5444,17 +5540,93 @@
     };
 
     // ============================================================
-    // 26. COMPONENT: FINANCE PAGE
+    // 27. COMPONENT: FINANCE PAGE
     // ============================================================
 
     const FinancePage = ({ onNavigate }) => {
         const { installments, payments, loans, expenses, capitalMovements, refreshKey } = useApp();
         const now = new Date();
+        const currentYear = now.getUTCFullYear();
+        const currentMonth = now.getUTCMonth() + 1;
 
-        const metrics = useMemo(() => FinanceEngine.calculateMetrics({
-            installments, payments, loans, expenses, capitalMovements,
-            year: now.getUTCFullYear(), month: now.getUTCMonth() + 1
-        }), [installments, payments, loans, expenses, capitalMovements, refreshKey]);
+        // Recalcular capital desde movimientos reales
+        const metrics = useMemo(() => {
+            const validLoanIds = new Set(loans.map(l => l.id));
+            const validInstallmentIds = new Set(installments.map(i => i.id));
+            const validExpenseIds = new Set(expenses.map(e => e.id));
+
+            const allCapitalIn = normalizeMoney(capitalMovements.filter(m => {
+                if (m.type !== 'initial' && m.type !== 'income') return false;
+                if (m.referenceType && m.referenceId) {
+                    if (m.referenceType === 'loan' && !validLoanIds.has(m.referenceId)) return false;
+                    if (m.referenceType === 'expense' && !validExpenseIds.has(m.referenceId)) return false;
+                }
+                return true;
+            }).reduce((s, m) => s + (m.amount || 0), 0));
+
+            const allCapitalOut = normalizeMoney(capitalMovements.filter(m => {
+                if (m.type !== 'loan' && m.type !== 'expense' && m.type !== 'withdrawal') return false;
+                if (m.referenceType && m.referenceId) {
+                    if (m.referenceType === 'loan' && !validLoanIds.has(m.referenceId)) return false;
+                    if (m.referenceType === 'expense' && !validExpenseIds.has(m.referenceId)) return false;
+                }
+                return true;
+            }).reduce((s, m) => s + (m.amount || 0), 0));
+
+            const allPaymentsIn = normalizeMoney(capitalMovements.filter(m => {
+                if (m.type !== 'payment') return false;
+                if (m.referenceType === 'payment' && m.referenceId && !validInstallmentIds.has(m.referenceId)) return false;
+                return true;
+            }).reduce((s, m) => s + (m.amount || 0), 0));
+
+            const totalCapital = normalizeMoney(allCapitalIn - allCapitalOut + allPaymentsIn);
+            const totalLent = normalizeMoney(loans.filter(l => l.status === 'active' || l.status === 'overdue')
+                .reduce((s, l) => s + (l.principal || 0), 0));
+            const availableCapital = normalizeMoney(totalCapital - totalLent);
+
+            // Cobros del mes actual (por fecha real)
+            const monthPayments = payments.filter(p => {
+                const d = new Date(p.paymentDate);
+                return d.getUTCMonth() === currentMonth - 1 && d.getUTCFullYear() === currentYear;
+            });
+            let collectedCapital = 0, collectedInterest = 0, collectedMora = 0;
+            for (const p of monthPayments) {
+                const bd = p.breakdown || {};
+                collectedCapital += normalizeMoney(bd.capital || 0);
+                collectedInterest += normalizeMoney(bd.interest || 0);
+                collectedMora += normalizeMoney(bd.mora || 0);
+            }
+            const collectedAmount = normalizeMoney(collectedCapital + collectedInterest + collectedMora);
+
+            // Gastos del mes
+            const monthExpenses = expenses.filter(e => {
+                const d = new Date(e.date);
+                return d.getUTCMonth() === currentMonth - 1 && d.getUTCFullYear() === currentYear;
+            });
+            const totalExpenses = normalizeMoney(monthExpenses.reduce((s, e) => s + (e.amount || 0), 0));
+
+            // Cuotas del mes (para meta)
+            const monthInstallments = installments.filter(i => {
+                const d = new Date(i.dueDate);
+                return d.getUTCMonth() === currentMonth - 1 && d.getUTCFullYear() === currentYear;
+            });
+            const expectedAmount = normalizeMoney(monthInstallments.reduce((s, i) => s + (i.totalAmount || 0), 0));
+
+            return {
+                totalCapital,
+                totalLent,
+                availableCapital,
+                collectedAmount,
+                collectedCapital,
+                collectedInterest,
+                collectedMora,
+                expectedAmount,
+                totalExpenses,
+                profit: normalizeMoney(collectedInterest + collectedMora - totalExpenses),
+                pending: normalizeMoney(expectedAmount - collectedAmount),
+                compliance: expectedAmount > 0 ? normalizeMoney((collectedAmount / expectedAmount) * 100) : 0
+            };
+        }, [loans, installments, payments, capitalMovements, expenses, currentYear, currentMonth, refreshKey]);
 
         return (
             <div style={{ padding: '20px', paddingBottom: '120px' }}>
@@ -5527,7 +5699,7 @@
     };
 
     // ============================================================
-    // 27. COMPONENT: EXPENSES PAGE
+    // 28. COMPONENT: EXPENSES PAGE
     // ============================================================
 
     const ExpensesPage = ({ onNavigate }) => {
@@ -5618,8 +5790,7 @@
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '14px' }}>
                     <div style={{ fontSize: '26px', fontWeight: '700' }}>Gastos</div>
-                    <button className="btn btn-primary btn-sm" onClick={() => { setEditing(null);
-                        setShowForm(true); }}>
+                    <button className="btn btn-primary btn-sm" onClick={() => { setEditing(null); setShowForm(true); }}>
                         <IconSVG.Plus /> Registrar
                     </button>
                 </div>
@@ -5635,8 +5806,7 @@
                     <EmptyState
                         icon={<IconSVG.TrendingUp />}
                         title="Sin gastos"
-                        action={<button className="btn btn-primary btn-sm" onClick={() => { setEditing(null);
-                            setShowForm(true); }}>
+                        action={<button className="btn btn-primary btn-sm" onClick={() => { setEditing(null); setShowForm(true); }}>
                             + Registrar gasto
                         </button>}
                     />
@@ -5662,8 +5832,7 @@
                             </div>
                             <div style={{ display: 'flex', gap: '4px' }}>
                                 <button className="btn btn-ghost btn-sm" style={{ padding: '6px 8px' }}
-                                    onClick={() => { setEditing(e);
-                                        setShowForm(true); }}>
+                                    onClick={() => { setEditing(e); setShowForm(true); }}>
                                     <IconSVG.Edit3 />
                                 </button>
                                 <button className="btn btn-ghost btn-sm" style={{ padding: '6px 8px', color: 'var(--danger)' }}
@@ -5676,15 +5845,13 @@
                 )}
 
                 {showForm && (
-                    <div className="modal-overlay" onClick={() => { setShowForm(false);
-                        setEditing(null); }}>
+                    <div className="modal-overlay" onClick={() => { setShowForm(false); setEditing(null); }}>
                         <div className="modal-content" onClick={e => e.stopPropagation()}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '18px' }}>
                                 <div style={{ fontSize: '20px', fontWeight: '700' }}>
                                     {editing ? 'Editar gasto' : 'Registrar gasto'}
                                 </div>
-                                <button onClick={() => { setShowForm(false);
-                                    setEditing(null); }} className="btn btn-ghost btn-sm">
+                                <button onClick={() => { setShowForm(false); setEditing(null); }} className="btn btn-ghost btn-sm">
                                     <IconSVG.X />
                                 </button>
                             </div>
@@ -5713,7 +5880,7 @@
     };
 
     // ============================================================
-    // 28. COMPONENT: EXPENSE FORM
+    // 29. COMPONENT: EXPENSE FORM
     // ============================================================
 
     const ExpenseForm = ({ cats, initial, onSave, onRefresh }) => {
@@ -5747,8 +5914,7 @@
         };
 
         return (
-            <form onSubmit={e => { e.preventDefault();
-                onSave({ ...f, amount: parseFloat(f.amount) }); }} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <form onSubmit={e => { e.preventDefault(); onSave({ ...f, amount: parseFloat(f.amount) }); }} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <div>
                     <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
                         Monto *
@@ -5883,7 +6049,7 @@
     };
 
     // ============================================================
-    // 29. COMPONENT: MORE PAGE (CONFIGURACIÓN)
+    // 30. COMPONENT: MORE PAGE (CON PREFERENCIAS CORREGIDAS)
     // ============================================================
 
     const MorePage = ({ onNavigate }) => {
@@ -5957,82 +6123,15 @@
             );
         }
 
+        // ============================================================
+        // PREFERENCIAS - USANDO COMPONENTE INDEPENDIENTE
+        // ============================================================
         if (subpage === 'preferences') {
-            const cfg = config || {};
-            const [lp, setLp] = useState({
-                defaultInterestRate: cfg.defaultInterestRate || 20,
-                defaultFrequency: cfg.defaultFrequency || 'monthly',
-                defaultInstallments: cfg.defaultInstallments || 5
-            });
-
-            const handleSavePrefs = async () => {
-                try {
-                    await initDatabase();
-                    const ex = await db.settings.get(user.id);
-                    const nc = { ...(ex || {}), ...lp, userId: user.id };
-                    await db.settings.put(nc);
-                    await verifyPersistence(db.settings, user.id);
-                    await refreshAllData();
-                    addToast('Preferencias guardadas correctamente', 'success');
-                } catch (err) {
-                    addToast('No se pudieron guardar las preferencias.', 'error');
-                    console.error('[PREF ERROR]', err);
-                }
-            };
-
             return (
-                <div style={{ padding: '20px', paddingBottom: '120px', background: 'var(--bg-deep)', minHeight: '100vh' }}>
-                    <button onClick={() => setSubpage('main')} className="back-btn">
-                        <IconSVG.ArrowLeft /> Volver
-                    </button>
-                    <div style={{ fontSize: '24px', fontWeight: '700', marginBottom: '20px', color: 'var(--text-primary)' }}>
-                        Preferencias
-                    </div>
-                    <div className="glass-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px', background: 'var(--bg-elevated)' }}>
-                        <div>
-                            <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                                Tasa predeterminada (%)
-                            </label>
-                            <input
-                                type="number"
-                                value={lp.defaultInterestRate}
-                                onChange={e => setLp({ ...lp, defaultInterestRate: parseFloat(e.target.value) || 0 })}
-                                className="glass-input"
-                                min="0"
-                                max="100"
-                                step="0.1"
-                            />
-                        </div>
-                        <div>
-                            <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                                Frecuencia predeterminada
-                            </label>
-                            <select value={lp.defaultFrequency} onChange={e => setLp({ ...lp, defaultFrequency: e.target.value })}
-                                className="glass-input">
-                                <option value="daily">Diaria</option>
-                                <option value="weekly">Semanal</option>
-                                <option value="biweekly">Quincenal</option>
-                                <option value="monthly">Mensual</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                                Cuotas predeterminadas
-                            </label>
-                            <input
-                                type="number"
-                                value={lp.defaultInstallments}
-                                onChange={e => setLp({ ...lp, defaultInstallments: parseInt(e.target.value) || 1 })}
-                                className="glass-input"
-                                min="1"
-                                max="120"
-                            />
-                        </div>
-                        <button className="btn btn-primary" style={{ width: '100%', marginTop: '8px' }} onClick={handleSavePrefs}>
-                            <IconSVG.Check /> Guardar preferencias
-                        </button>
-                    </div>
-                </div>
+                <PreferencesPage
+                    onBack={() => setSubpage('main')}
+                    initialConfig={config}
+                />
             );
         }
 
@@ -6109,14 +6208,14 @@
                 </button>
 
                 <div style={{ marginTop: '24px', textAlign: 'center', fontSize: '11px', color: 'var(--text-muted)' }}>
-                    LOANS W v9.2 · Sistema Profesional de Abonos y Pagos
+                    LOANS W v9.4 · Sistema Financiero Completo
                 </div>
             </div>
         );
     };
 
     // ============================================================
-    // 30. COMPONENT: CHANGE PASSWORD FORM
+    // 31. COMPONENT: CHANGE PASSWORD FORM
     // ============================================================
 
     const ChangePasswordForm = ({ onSuccess }) => {
@@ -6221,7 +6320,7 @@
     };
 
     // ============================================================
-    // 31. COMPONENT: SIMULATOR PAGE
+    // 32. COMPONENT: SIMULATOR PAGE
     // ============================================================
 
     const SimulatorPage = ({ onNavigate }) => {
@@ -6556,7 +6655,7 @@
     };
 
     // ============================================================
-    // 32. APP PRINCIPAL
+    // 33. APP PRINCIPAL
     // ============================================================
 
     const App = () => {
@@ -6658,21 +6757,20 @@
     ReactDOM.render(<App />, document.getElementById('root'));
 
     console.log('========================================');
-    console.log('LOANS W v9.2 — SISTEMA PROFESIONAL DE ABONOS Y PAGOS');
-    console.log('CON DISTRIBUCIÓN CORREGIDA');
+    console.log('LOANS W v9.4 — SISTEMA FINANCIERO COMPLETO');
     console.log('========================================');
-    console.log('✅ PaymentDistributionEngine - Distribución de pagos entre cuotas');
-    console.log('✅ Valor recibido: usa remainingAmount en lugar de totalAmount');
-    console.log('✅ 6 tipos de abono: Cuota, Capital, Intereses, Mora, Capital+Intereses, Personalizado');
-    console.log('✅ MONEDA NORMALIZADA - Todos los valores se redondean a pesos');
-    console.log('✅ Distribución por orden de vencimiento (cuota más antigua primero)');
-    console.log('✅ Vista previa antes de guardar');
-    console.log('✅ Recibo con impresión y compartir');
-    console.log('✅ Historial completo de pagos');
-    console.log('✅ Edición y eliminación de pagos');
-    console.log('✅ Auditoría completa');
-    console.log('✅ Persistencia en IndexedDB');
+    console.log('✅ CollectionHistoryEngine - Historial de cobros por mes');
+    console.log('✅ Progreso basado en FECHA REAL DE PAGO');
+    console.log('✅ Dashboard - Muestra resumen del mes actual');
+    console.log('✅ Collections - Permite ver historial por mes');
+    console.log('✅ Clientes que pagaron en cada período');
+    console.log('✅ Pagos adelantados - Se registran en el mes recibido');
+    console.log('✅ Preferencias - Componente independiente corregido');
+    console.log('✅ Eliminación de préstamos - Completa y sin huérfanos');
+    console.log('✅ Capital total - Recalculado desde movimientos reales');
+    console.log('✅ Compatibilidad con datos existentes');
     console.log('========================================');
 </script>
 </body>
 </html>
+    
