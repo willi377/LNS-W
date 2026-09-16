@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#060610">
-    <title>LOANS W — Sistema Financiero Completo v10.1</title>
+    <title>LOANS W — Sistema Financiero Completo v10.4</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -376,11 +376,12 @@
 
 <script type="text/babel">
     // ============================================================
-    // LOANS W v10.1 - SISTEMA FINANCIERO COMPLETO CON CORRECCIONES
-    // PARTE 1/3 - INFRAESTRUCTURA Y MOTORES
+    // LOANS W v10.4 - SISTEMA FINANCIERO COMPLETO
+    // CON COMPENSACIÓN DE PÉRDIDAS VÍA INTERESES
+    // Y ARRANQUE ESTABILIZADO
     // ============================================================
 
-    const { useState, useEffect, useMemo, useCallback, useContext, createContext, useRef, useReducer } = React;
+    const { useState, useEffect, useMemo, useCallback, useContext, createContext, useRef } = React;
 
     // ============================================================
     // 1. UTILIDADES BASE CON VALIDACIONES DEFENSIVAS
@@ -469,9 +470,6 @@
         recovered: 'Recuperado'
     }[s] || s);
 
-    const generateId = () => Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
-
-    // Helper para nombres seguros
     const getSafeInitial = (fullName) => {
         if (typeof fullName !== 'string') return '?';
         const trimmed = fullName.trim();
@@ -616,7 +614,7 @@
     };
 
     // ============================================================
-    // 3. MOTORES EXISTENTES
+    // 3. MOTORES FINANCIEROS
     // ============================================================
 
     class MoraEngine {
@@ -934,6 +932,95 @@
         }
     }
 
+    // ============================================================
+    // 3.1 MOTOR DE COMPENSACIÓN DE PÉRDIDAS
+    // ============================================================
+
+    class LossCompensationEngine {
+        static calculateState(lostDebts, recoveryMovements, lossCompensations) {
+            const safeLost = Array.isArray(lostDebts) ? lostDebts : [];
+            const safeRecoveries = Array.isArray(recoveryMovements) ? recoveryMovements : [];
+            const safeCompensations = Array.isArray(lossCompensations) ? lossCompensations : [];
+
+            const totalLostCapital = normalizeMoney(
+                safeLost.reduce((s, d) => s + normalizeMoney(d.lostCapital || 0), 0)
+            );
+            const totalExpectedProfitLost = normalizeMoney(
+                safeLost.reduce((s, d) => s + normalizeMoney(d.lostExpectedProfit || 0), 0)
+            );
+
+            const totalDirectRecovery = normalizeMoney(
+                safeRecoveries.reduce((s, r) => s + normalizeMoney(r.capitalRecovered || r.amount || 0), 0)
+            );
+
+            const totalInterestCompensation = normalizeMoney(
+                safeCompensations.reduce((s, c) => s + normalizeMoney(c.amountAppliedToLoss || 0), 0)
+            );
+
+            const totalRecovered = normalizeMoney(totalDirectRecovery + totalInterestCompensation);
+            const totalPending = normalizeMoney(Math.max(0, totalLostCapital - totalRecovered));
+
+            const perDebt = safeLost.map(ld => {
+                const directRec = normalizeMoney(
+                    safeRecoveries
+                        .filter(r => r.lostDebtId === ld.id)
+                        .reduce((s, r) => s + normalizeMoney(r.capitalRecovered || r.amount || 0), 0)
+                );
+                const intRec = normalizeMoney(
+                    safeCompensations
+                        .filter(c => c.lostDebtId === ld.id)
+                        .reduce((s, c) => s + normalizeMoney(c.amountAppliedToLoss || 0), 0)
+                );
+                const totalRec = normalizeMoney(directRec + intRec);
+                const pending = normalizeMoney(Math.max(0, (ld.lostCapital || 0) - totalRec));
+                const percentage = (ld.lostCapital || 0) > 0
+                    ? normalizeMoney((totalRec / ld.lostCapital) * 100)
+                    : 0;
+
+                return {
+                    ...ld,
+                    directRecovery: directRec,
+                    interestRecovery: intRec,
+                    totalRecovered: totalRec,
+                    pending,
+                    percentage,
+                    isFullyRecovered: pending <= 0.01
+                };
+            });
+
+            return {
+                totalLostCapital,
+                totalExpectedProfitLost,
+                totalDirectRecovery,
+                totalInterestCompensation,
+                totalRecovered,
+                totalPending,
+                recoveryPercentage: totalLostCapital > 0
+                    ? normalizeMoney((totalRecovered / totalLostCapital) * 100)
+                    : 0,
+                perDebt,
+                hasPendingLoss: totalPending > 0.01
+            };
+        }
+
+        static distributeInterestToLosses(interestAmount, perDebtSorted) {
+            const distributions = [];
+            let remaining = normalizeMoney(interestAmount);
+            if (remaining <= 0) return distributions;
+
+            for (const debt of perDebtSorted) {
+                if (remaining <= 0) break;
+                if (debt.pending <= 0.01) continue;
+                const apply = normalizeMoney(Math.min(remaining, debt.pending));
+                if (apply <= 0) continue;
+                distributions.push({ lostDebtId: debt.id, amount: apply });
+                remaining = normalizeMoney(remaining - apply);
+            }
+
+            return distributions;
+        }
+    }
+
     class LostDebtEngine {
         static calculateLossBreakdown(loan, installments, payments) {
             const originalCapital = normalizeMoney(loan.principal || 0);
@@ -978,98 +1065,6 @@
                 recoveryPercentage: lostDebt.lostCapital > 0 
                     ? normalizeMoney((recoveredCapital / lostDebt.lostCapital) * 100) 
                     : 0
-            };
-        }
-
-        static calculateFullFinancialMetrics({
-            loans, installments, payments, lostDebts,
-            recoveryMovements, expenses, capitalMovements, year, month
-        }) {
-            const sd = new Date(Date.UTC(year, month - 1, 1, 12, 0, 0, 0));
-            const ed = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
-
-            const activeLoans = loans.filter(l => l.status === 'active' || l.status === 'overdue' || l.status === 'finished');
-            const lostLoans = loans.filter(l => l.status === 'lost');
-
-            const totalLent = normalizeMoney(
-                loans.filter(l => l.status !== 'cancelled').reduce((s, l) => s + (l.principal || 0), 0)
-            );
-            const activeCapitalPlaced = normalizeMoney(
-                activeLoans.filter(l => l.status === 'active' || l.status === 'overdue')
-                    .reduce((s, l) => s + (l.currentBalance || 0), 0)
-            );
-            const totalLostCapital = normalizeMoney(lostDebts.reduce((s, d) => s + (d.lostCapital || 0), 0));
-            const totalRecoveredCapital = normalizeMoney(lostDebts.reduce((s, d) => s + (d.recoveredCapital || 0), 0));
-            const totalPendingLostCapital = normalizeMoney(Math.max(0, totalLostCapital - totalRecoveredCapital));
-
-            let collectedCapitalFromActive = 0;
-            for (const p of payments) {
-                const loan = loans.find(l => l.id === p.loanId);
-                if (loan && loan.status !== 'lost') {
-                    const bd = p.breakdown || {};
-                    collectedCapitalFromActive += normalizeMoney(bd.capital || 0);
-                }
-            }
-
-            const totalRecoveredAllTime = normalizeMoney(collectedCapitalFromActive + totalRecoveredCapital);
-            const pendingCapitalActive = normalizeMoney(
-                activeLoans.filter(l => l.status === 'active' || l.status === 'overdue')
-                    .reduce((s, l) => s + (l.currentBalance || 0), 0)
-            );
-
-            const totalExpectedProfit = normalizeMoney(
-                loans.filter(l => l.status !== 'cancelled')
-                    .reduce((s, l) => s + ((l.totalRepayment || 0) - (l.principal || 0)), 0)
-            );
-
-            let totalCollectedProfit = 0, totalCollectedMora = 0;
-            for (const p of payments) {
-                const bd = p.breakdown || {};
-                totalCollectedProfit += normalizeMoney(bd.interest || 0);
-                totalCollectedMora += normalizeMoney(bd.mora || 0);
-            }
-
-            const totalLostExpectedProfit = normalizeMoney(
-                lostDebts.reduce((s, d) => s + (d.lostExpectedProfit || 0), 0)
-            );
-            const pendingProfitActive = normalizeMoney(
-                Math.max(0, totalExpectedProfit - totalCollectedProfit - totalLostExpectedProfit)
-            );
-
-            const periodExpenses = expenses.filter(e => {
-                if (!e || !e.date) return false;
-                const d = new Date(e.date);
-                return d >= sd && d <= ed;
-            });
-            const totalExpenses = normalizeMoney(periodExpenses.reduce((s, e) => s + (e.amount || 0), 0));
-            const allExpenses = normalizeMoney(expenses.reduce((s, e) => s + (e.amount || 0), 0));
-
-            const grossProfit = normalizeMoney(totalCollectedProfit + totalCollectedMora);
-            const netProfit = normalizeMoney(grossProfit - totalExpenses - totalPendingLostCapital);
-
-            const totalPorRecuperar = normalizeMoney(
-                activeLoans.filter(l => l.status === 'active' || l.status === 'overdue')
-                    .reduce((s, l) => {
-                        const loanInsts = installments.filter(i => i.loanId === l.id);
-                        return s + loanInsts
-                            .filter(i => i.status !== 'paid' && i.status !== 'cancelled')
-                            .reduce((sum, i) => sum + normalizeMoney((i.remainingAmount || i.totalAmount || 0) + MoraEngine.calculateMoraRemaining(i)), 0);
-                    }, 0)
-            );
-
-            return {
-                totalLent, activeCapitalPlaced, totalLostCapital, totalRecoveredCapital,
-                totalPendingLostCapital, totalRecoveredAllTime,
-                collectedCapitalFromActive: normalizeMoney(collectedCapitalFromActive),
-                pendingCapitalActive,
-                totalExpectedProfit,
-                totalCollectedProfit: normalizeMoney(totalCollectedProfit),
-                totalCollectedMora: normalizeMoney(totalCollectedMora),
-                grossProfit, totalLostExpectedProfit, pendingProfitActive,
-                totalExpenses, allExpenses, netProfit, totalPorRecuperar,
-                lostDebtsCount: lostDebts.length,
-                activeLoansCount: activeLoans.length,
-                lostLoansCount: lostLoans.length
             };
         }
     }
@@ -1123,7 +1118,8 @@
                     return null;
                 }
                 return await db.users.get(userId);
-            } catch {
+            } catch (err) {
+                console.warn('[SESSION] Error validando sesión:', err);
                 sessionStorage.removeItem('lw_session');
                 localStorage.removeItem('lw_session');
                 return null;
@@ -1146,13 +1142,13 @@
     }
 
     // ============================================================
-    // 5. DATABASE v12
+    // 5. DATABASE v13 (con upgrade defensivo)
     // ============================================================
 
-    const DB_VERSION = 12;
+    const DB_VERSION = 13;
     const db = new Dexie('LoansW_DB');
 
-    db.version(12).stores({
+    db.version(13).stores({
         users: '++id, &document, email, createdAt',
         clients: '++id, userId, fullName, document, phone, email, address, city, neighborhood, company, occupation, references, notes, status, photo, createdAt, updatedAt',
         loans: '++id, userId, clientId, loanNumber, principal, interestType, interestRate, installmentsCount, frequency, startDate, dueDateType, moraType, moraRate, status, totalRepayment, totalPaid, currentBalance, progress, createdAt, updatedAt, lostAt',
@@ -1168,50 +1164,99 @@
         simulations: '++id, userId, name, data, createdAt',
         notes: '++id, userId, titulo, contenido, fechaCreacion, fechaModificacion, fijada',
         lostDebts: '++id, userId, loanId, clientId, lostAt, lostCapital, lostExpectedProfit, totalExpected, pendingBalanceAtLoss, recoveredCapital, recoveredInterest, status, fullyRecoveredAt, createdAt, updatedAt',
-        recoveryMovements: '++id, lostDebtId, loanId, clientId, amount, capitalRecovered, interestRecovered, recoveryDate, method, note, userId, createdAt'
-    });
+        recoveryMovements: '++id, lostDebtId, loanId, clientId, amount, capitalRecovered, interestRecovered, recoveryDate, method, note, userId, createdAt',
+        lossCompensations: '++id, userId, lostDebtId, paymentId, loanId, clientId, installmentId, amountAppliedToLoss, interestGenerated, moraGenerated, capitalReceived, pendingBefore, pendingAfter, appliedAt, description, createdAt'
+}).upgrade(async tx => {
+    console.log('[DB] Migrando a v13 — agregando tabla lossCompensations (sin borrar datos)...');
+    try {
+        const table = tx.table('lossCompensations');
+        const count = await table.count();
+        console.log(`[DB] Migración v13 OK — lossCompensations: ${count} registros existentes`);
+    } catch (err) {
+        console.warn('[DB] Migración v13 advirtió (no crítico):', err);
+    }
+});
 
-    db.version(11).stores({
-        users: '++id, &document, email, createdAt',
-        clients: '++id, userId, fullName, document, phone, email, address, city, neighborhood, company, occupation, references, notes, status, photo, createdAt, updatedAt',
-        loans: '++id, userId, clientId, loanNumber, principal, interestType, interestRate, installmentsCount, frequency, startDate, dueDateType, moraType, moraRate, status, totalRepayment, totalPaid, currentBalance, progress, createdAt, updatedAt',
-        installments: '++id, loanId, number, startDate, dueDate, principal, interest, totalAmount, paidAmount, remainingAmount, moraDays, moraAmount, moraPaid, moraRemaining, status',
-        payments: '++id, loanId, clientId, installmentId, amount, paymentDate, method, note, breakdown, paymentType, receiptNumber, isFullPayment, surplus, createdAt, updatedAt',
-        capitalMovements: '++id, userId, type, amount, date, description, referenceType, referenceId, createdAt',
-        expenses: '++id, userId, category, amount, date, time, description, provider, paymentMethod, notes, receiptPhoto, capitalMovementId, createdAt, updatedAt',
-        expenseCategories: '++id, name',
-        settings: '&userId',
-        auditLog: '++id, userId, timestamp, entityType, entityId, action, description, before, after, details',
-        sessions: '++id, userId, token, expiresAt, createdAt',
-        collectionPeriods: '++id, userId, year, month, expectedAmount, collectedAmount, pendingAmount, compliance, data, createdAt, updatedAt',
-        simulations: '++id, userId, name, data, createdAt',
-        notes: '++id, userId, titulo, contenido, fechaCreacion, fechaModificacion, fijada'
-    }).upgrade(async tx => {
-        console.log('[DB] Migrando a v12...');
-        try {
-            const loans = await tx.table('loans').toArray();
-            let migratedCount = 0;
-            for (const loan of loans) {
-                if (loan.status === 'lost' && !loan.lostAt) {
-                    await tx.table('loans').update(loan.id, { lostAt: new Date().toISOString() });
-                    migratedCount++;
-                }
+db.version(12).stores({
+    users: '++id, &document, email, createdAt',
+    clients: '++id, userId, fullName, document, phone, email, address, city, neighborhood, company, occupation, references, notes, status, photo, createdAt, updatedAt',
+    loans: '++id, userId, clientId, loanNumber, principal, interestType, interestRate, installmentsCount, frequency, startDate, dueDateType, moraType, moraRate, status, totalRepayment, totalPaid, currentBalance, progress, createdAt, updatedAt, lostAt',
+    installments: '++id, loanId, number, startDate, dueDate, principal, interest, totalAmount, paidAmount, remainingAmount, moraDays, moraAmount, moraPaid, moraRemaining, status',
+    payments: '++id, loanId, clientId, installmentId, amount, paymentDate, method, note, breakdown, paymentType, receiptNumber, isFullPayment, surplus, createdAt, updatedAt',
+    capitalMovements: '++id, userId, type, amount, date, description, referenceType, referenceId, createdAt',
+    expenses: '++id, userId, category, amount, date, time, description, provider, paymentMethod, notes, receiptPhoto, capitalMovementId, createdAt, updatedAt',
+    expenseCategories: '++id, name',
+    settings: '&userId',
+    auditLog: '++id, userId, timestamp, entityType, entityId, action, description, before, after, details',
+    sessions: '++id, userId, token, expiresAt, createdAt',
+    collectionPeriods: '++id, userId, year, month, expectedAmount, collectedAmount, pendingAmount, compliance, data, createdAt, updatedAt',
+    simulations: '++id, userId, name, data, createdAt',
+    notes: '++id, userId, titulo, contenido, fechaCreacion, fechaModificacion, fijada',
+    lostDebts: '++id, userId, loanId, clientId, lostAt, lostCapital, lostExpectedProfit, totalExpected, pendingBalanceAtLoss, recoveredCapital, recoveredInterest, status, fullyRecoveredAt, createdAt, updatedAt',
+    recoveryMovements: '++id, lostDebtId, loanId, clientId, amount, capitalRecovered, interestRecovered, recoveryDate, method, note, userId, createdAt'
+});
+
+db.version(11).stores({
+    users: '++id, &document, email, createdAt',
+    clients: '++id, userId, fullName, document, phone, email, address, city, neighborhood, company, occupation, references, notes, status, photo, createdAt, updatedAt',
+    loans: '++id, userId, clientId, loanNumber, principal, interestType, interestRate, installmentsCount, frequency, startDate, dueDateType, moraType, moraRate, status, totalRepayment, totalPaid, currentBalance, progress, createdAt, updatedAt',
+    installments: '++id, loanId, number, startDate, dueDate, principal, interest, totalAmount, paidAmount, remainingAmount, moraDays, moraAmount, moraPaid, moraRemaining, status',
+    payments: '++id, loanId, clientId, installmentId, amount, paymentDate, method, note, breakdown, paymentType, receiptNumber, isFullPayment, surplus, createdAt, updatedAt',
+    capitalMovements: '++id, userId, type, amount, date, description, referenceType, referenceId, createdAt',
+    expenses: '++id, userId, category, amount, date, time, description, provider, paymentMethod, notes, receiptPhoto, capitalMovementId, createdAt, updatedAt',
+    expenseCategories: '++id, name',
+    settings: '&userId',
+    auditLog: '++id, userId, timestamp, entityType, entityId, action, description, before, after, details',
+    sessions: '++id, userId, token, expiresAt, createdAt',
+    collectionPeriods: '++id, userId, year, month, expectedAmount, collectedAmount, pendingAmount, compliance, data, createdAt, updatedAt',
+    simulations: '++id, userId, name, data, createdAt',
+    notes: '++id, userId, titulo, contenido, fechaCreacion, fechaModificacion, fijada'
+}).upgrade(async tx => {
+    console.log('[DB] Migrando a v12...');
+    try {
+        const loans = await tx.table('loans').toArray();
+        let migratedCount = 0;
+        for (const loan of loans) {
+            if (loan.status === 'lost' && !loan.lostAt) {
+                await tx.table('loans').update(loan.id, { lostAt: new Date().toISOString() });
+                migratedCount++;
             }
-            console.log(`[DB] Migración a v12 completada - ${migratedCount} préstamos actualizados`);
-        } catch (err) {
-            console.error('[DB] Error en migración v12:', err);
         }
-    });
+        console.log(`[DB] Migración a v12 completada - ${migratedCount} préstamos actualizados`);
+    } catch (err) {
+        console.error('[DB] Error en migración v12:', err);
+    }
+});
 
     const initDatabase = async () => {
-        if (!db.isOpen()) await db.open();
+        try {
+            if (!db.isOpen()) {
+                const openPromise = db.open();
+                const timeout = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Timeout abriendo IndexedDB (posible migración colgada)')), 8000)
+                );
+                await Promise.race([openPromise, timeout]);
+            }
+        } catch (err) {
+            console.error('[DB] Error abriendo la base:', err);
+            try { db.close(); } catch (e) {}
+            try {
+                await db.open();
+            } catch (err2) {
+                console.error('[DB] Segundo intento falló:', err2);
+                throw err2;
+            }
+        }
+
         const tables = db.tables.map(t => t.name);
         const required = ['users', 'sessions', 'clients', 'loans', 'installments', 'payments',
-            'capitalMovements', 'expenses', 'expenseCategories', 'settings', 'auditLog', 'collectionPeriods', 
-            'notes', 'lostDebts', 'recoveryMovements'
+            'capitalMovements', 'expenses', 'expenseCategories', 'settings', 'auditLog', 'collectionPeriods',
+            'notes', 'lostDebts', 'recoveryMovements', 'lossCompensations'
         ];
         const missing = required.filter(t => !tables.includes(t));
-        if (missing.length) throw new Error(`Tablas faltantes: ${missing.join(', ')}`);
+        if (missing.length) {
+            console.warn('[DB] Tablas faltantes:', missing.join(', '));
+        }
         return db;
     };
 
@@ -1285,6 +1330,7 @@
         const [notes, setNotes] = useState([]);
         const [lostDebts, setLostDebts] = useState([]);
         const [recoveryMovements, setRecoveryMovements] = useState([]);
+        const [lossCompensations, setLossCompensations] = useState([]);
         const [config, setConfig] = useState(null);
         const [toasts, setToasts] = useState([]);
         const [loading, setLoading] = useState(true);
@@ -1304,14 +1350,15 @@
                 const userId = user.id;
                 await cleanOrphanCapitalMovements(userId);
 
-                const [c, l, ec, cp, n, ld, rm] = await Promise.all([
+                const [c, l, ec, cp, n, ld, rm, lc] = await Promise.all([
                     db.clients.where({ userId }).toArray(),
                     db.loans.where({ userId }).toArray(),
                     db.expenseCategories.toArray(),
                     db.collectionPeriods.where({ userId }).toArray(),
                     db.notes.where({ userId }).toArray(),
                     db.lostDebts.where({ userId }).toArray(),
-                    db.recoveryMovements.where({ userId }).toArray()
+                    db.recoveryMovements.where({ userId }).toArray(),
+                    db.lossCompensations.where({ userId }).toArray()
                 ]);
 
                 setClients(c);
@@ -1321,6 +1368,7 @@
                 setNotes(n);
                 setLostDebts(ld);
                 setRecoveryMovements(rm);
+                setLossCompensations(lc);
 
                 const loanIds = l.map(loan => loan.id);
                 let i = [];
@@ -1493,6 +1541,65 @@
             }
         }, [user]);
 
+        const applyInterestToLosses = useCallback(async (interestAmount, paymentInfo = {}) => {
+            const interest = normalizeMoney(interestAmount);
+            if (interest <= 0) return [];
+
+            const allLostDebts = await db.lostDebts.where({ userId: user.id }).toArray();
+            const allRecoveries = await db.recoveryMovements.where({ userId: user.id }).toArray();
+            const allCompensations = await db.lossCompensations.where({ userId: user.id }).toArray();
+
+            const state = LossCompensationEngine.calculateState(allLostDebts, allRecoveries, allCompensations);
+            if (!state.hasPendingLoss) return [];
+
+            const sortedPending = state.perDebt
+                .filter(d => !d.isFullyRecovered)
+                .sort((a, b) => new Date(a.lostAt) - new Date(b.lostAt));
+
+            const distributions = LossCompensationEngine.distributeInterestToLosses(interest, sortedPending);
+            if (distributions.length === 0) return [];
+
+            const now = new Date().toISOString();
+            const applied = [];
+
+            for (const dist of distributions) {
+                const debt = sortedPending.find(d => d.id === dist.lostDebtId);
+                if (!debt) continue;
+
+                const pendingBefore = debt.pending;
+                const pendingAfter = normalizeMoney(Math.max(0, pendingBefore - dist.amount));
+
+                await db.lossCompensations.add({
+                    userId: user.id,
+                    lostDebtId: debt.id,
+                    paymentId: paymentInfo.paymentId || null,
+                    loanId: paymentInfo.loanId || null,
+                    clientId: paymentInfo.clientId || null,
+                    installmentId: paymentInfo.installmentId || null,
+                    amountAppliedToLoss: dist.amount,
+                    interestGenerated: interest,
+                    moraGenerated: 0,
+                    capitalReceived: 0,
+                    pendingBefore,
+                    pendingAfter,
+                    appliedAt: now,
+                    description: paymentInfo.description || 'Compensación automática vía intereses',
+                    createdAt: now
+                });
+
+                await db.lostDebts.update(debt.id, {
+                    recoveredInterest: normalizeMoney((debt.recoveredInterest || 0) + dist.amount),
+                    status: pendingAfter <= 0.01 ? 'fully_recovered' : 'partial_recovered',
+                    fullyRecoveredAt: pendingAfter <= 0.01 ? now : null,
+                    updatedAt: now
+                });
+
+                applied.push({ lostDebtId: debt.id, amount: dist.amount });
+            }
+
+            return applied;
+        }, [user]);
+
         useEffect(() => {
             if (user) refreshAllData();
         }, [user]);
@@ -1502,12 +1609,13 @@
             capitalMovements, expenseCategories, setExpenseCategories,
             collectionPeriods, auditLogs, notes, setNotes, 
             lostDebts, setLostDebts, recoveryMovements, setRecoveryMovements,
+            lossCompensations, setLossCompensations,
             config, setConfig, toasts, addToast, loading, refreshKey, 
-            refreshAllData, addAuditLog, db
+            refreshAllData, addAuditLog, db, applyInterestToLosses
         }), [user, onLogout, clients, loans, installments, payments, expenses,
             capitalMovements, expenseCategories, collectionPeriods, auditLogs, notes,
-            lostDebts, recoveryMovements,
-            config, toasts, addToast, loading, refreshKey, refreshAllData, addAuditLog, db
+            lostDebts, recoveryMovements, lossCompensations,
+            config, toasts, addToast, loading, refreshKey, refreshAllData, addAuditLog, db, applyInterestToLosses
         ]);
 
         return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
@@ -1582,14 +1690,6 @@
     );
 
     // ============================================================
-    // FIN PARTE 1/3 — CONTINÚA PARTE 2/3
-    // ============================================================
-    // ============================================================
-    // LOANS W v10.1 - CON CORRECCIONES APLICADAS
-    // PARTE 2/3 - COMPONENTES DE PAGOS, PÉRDIDAS Y RECUPERACIÓN
-    // ============================================================
-
-    // ============================================================
     // 8. COMPONENT: PAYMENT TYPES
     // ============================================================
 
@@ -1629,95 +1729,7 @@
     };
 
     // ============================================================
-    // 9. COMPONENT: PAYMENT PREVIEW
-    // ============================================================
-
-    const PaymentPreview = ({ result, onConfirm, onCancel, loading }) => {
-        if (!result) return null;
-        const { allocation, after, originalValues, isFullPayment, surplus, receiptNumber } = result;
-        const totalAllocated = allocation.capital + allocation.interest + allocation.mora;
-
-        return (
-            <div style={{ marginTop: '16px' }}>
-                <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <IconSVG.FileText /> Resumen del abono
-                </div>
-
-                <div style={{
-                    background: 'var(--bg-primary)',
-                    border: '1px solid var(--glass-border)',
-                    borderRadius: 'var(--radius-lg)',
-                    padding: '24px', margin: '16px 0'
-                }}>
-                    <div style={{ textAlign: 'center', fontSize: '18px', fontWeight: '700', color: 'var(--accent-light)', marginBottom: '4px' }}>
-                        LOANS W
-                    </div>
-                    <div style={{ textAlign: 'center', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '16px' }}>
-                        Vista previa de abono
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '13px' }}>
-                        <span style={{ color: 'var(--text-muted)' }}>Cliente</span>
-                        <span style={{ fontWeight: '500' }}>{result.clientName}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '13px' }}>
-                        <span style={{ color: 'var(--text-muted)' }}>Valor recibido</span>
-                        <span style={{ fontWeight: '700', color: 'var(--accent-light)', fontSize: '16px' }}>
-                            {formatCurrency(result.receivedAmount)}
-                        </span>
-                    </div>
-
-                    <hr style={{ border: 'none', borderTop: '1px dashed var(--glass-border)', margin: '12px 0' }} />
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '13px' }}>
-                        <span style={{ color: 'var(--text-muted)' }}>Capital</span>
-                        <span style={{ color: 'var(--accent-light)' }}>{formatCurrency(allocation.capital)}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '13px' }}>
-                        <span style={{ color: 'var(--text-muted)' }}>Intereses</span>
-                        <span style={{ color: 'var(--warning-light)' }}>{formatCurrency(allocation.interest)}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '13px' }}>
-                        <span style={{ color: 'var(--text-muted)' }}>Mora</span>
-                        <span style={{ color: 'var(--danger-light)' }}>{formatCurrency(allocation.mora)}</span>
-                    </div>
-
-                    <hr style={{ border: 'none', borderTop: '1px dashed var(--glass-border)', margin: '12px 0' }} />
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '13px' }}>
-                        <span style={{ color: 'var(--text-muted)' }}>Saldo después</span>
-                        <span style={{ color: after.total <= 0 ? 'var(--success)' : 'var(--text-primary)', fontWeight: '600' }}>
-                            {formatCurrency(after.total)}
-                        </span>
-                    </div>
-
-                    {isFullPayment && (
-                        <div style={{
-                            marginTop: '8px', padding: '8px 12px',
-                            background: 'rgba(16, 185, 129, 0.1)',
-                            borderRadius: 'var(--radius-sm)',
-                            color: 'var(--success-light)',
-                            fontSize: '12px', fontWeight: '600', textAlign: 'center'
-                        }}>
-                            Cuota completamente pagada
-                        </div>
-                    )}
-                </div>
-
-                <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
-                    <button className="btn btn-ghost" style={{ flex: 1 }} onClick={onCancel} disabled={loading}>
-                        Cancelar
-                    </button>
-                    <button className="btn btn-success" style={{ flex: 1 }} onClick={onConfirm} disabled={loading}>
-                        {loading ? 'Procesando...' : 'Confirmar abono'}
-                    </button>
-                </div>
-            </div>
-        );
-    };
-
-    // ============================================================
-    // 10. COMPONENT: PAYMENT RECEIPT
+    // 9. COMPONENT: PAYMENT RECEIPT
     // ============================================================
 
     const PaymentReceipt = ({ payment, onClose, onPrint, onShare }) => {
@@ -1839,9 +1851,8 @@
             </div>
         );
     };
-
     // ============================================================
-    // 11. COMPONENT: PAYMENT HISTORY
+    // 10. COMPONENT: PAYMENT HISTORY
     // ============================================================
 
     const PaymentHistory = ({ payments, installments, loans, clients, onEdit, onDelete, onViewReceipt }) => {
@@ -1862,6 +1873,9 @@
                 {payments.sort((a, b) => new Date(b.paymentDate || b.createdAt) - new Date(a.paymentDate || a.createdAt))
                     .map(payment => {
                         const isExpanded = expanded === payment.id;
+                        const isCobro = payment.paymentType === 'full_installment';
+                        const typeLabel = isCobro ? 'Cobro' : (PaymentAllocationEngine.PAYMENT_TYPE_LABELS[payment.paymentType] || 'Abono');
+                        const borderColor = isCobro ? 'var(--success)' : 'var(--warning)';
 
                         return (
                             <div key={payment.id}
@@ -1871,18 +1885,23 @@
                                     borderRadius: 'var(--radius-sm)',
                                     marginBottom: '8px',
                                     cursor: 'pointer',
-                                    borderLeft: `2px solid ${payment.isFullPayment ? 'var(--success)' : 'var(--warning)'}`
+                                    borderLeft: `3px solid ${borderColor}`
                                 }}
                                 onClick={() => setExpanded(isExpanded ? null : payment.id)}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <div>
-                                        <div style={{ fontSize: '13px', fontWeight: '500' }}>
-                                            {formatDateTime(payment.paymentDate || payment.createdAt)}
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <span className={`badge ${isCobro ? 'badge-success' : 'badge-warning'}`}
+                                                style={{ padding: '2px 8px', fontSize: '10px' }}>
+                                                {isCobro ? '✓ Cobro' : '◐ ' + typeLabel}
+                                            </span>
+                                            <span style={{ fontSize: '13px', fontWeight: '500' }}>
+                                                {formatDateTime(payment.paymentDate || payment.createdAt)}
+                                            </span>
                                         </div>
-                                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                                            {PaymentAllocationEngine.PAYMENT_TYPE_LABELS[payment.paymentType] || payment.paymentType}
-                                            {' · '}
+                                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
                                             {payment.method}
+                                            {payment.receiptNumber ? ` · ${payment.receiptNumber}` : ''}
                                         </div>
                                     </div>
                                     <div style={{ textAlign: 'right' }}>
@@ -1894,22 +1913,34 @@
 
                                 {isExpanded && (
                                     <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--glass-border)' }}>
-                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '12px' }}>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', fontSize: '12px' }}>
                                             <div>
                                                 <span style={{ color: 'var(--text-muted)' }}>Capital: </span>
-                                                <span style={{ color: 'var(--accent-light)' }}>{formatCurrency(payment.breakdown?.capital || 0)}</span>
+                                                <div style={{ color: 'var(--accent-light)', fontWeight: '600' }}>
+                                                    {formatCurrency(payment.breakdown?.capital || 0)}
+                                                </div>
                                             </div>
                                             <div>
                                                 <span style={{ color: 'var(--text-muted)' }}>Intereses: </span>
-                                                <span style={{ color: 'var(--warning-light)' }}>{formatCurrency(payment.breakdown?.interest || 0)}</span>
+                                                <div style={{ color: 'var(--warning-light)', fontWeight: '600' }}>
+                                                    {formatCurrency(payment.breakdown?.interest || 0)}
+                                                </div>
                                             </div>
                                             <div>
                                                 <span style={{ color: 'var(--text-muted)' }}>Mora: </span>
-                                                <span style={{ color: 'var(--danger-light)' }}>{formatCurrency(payment.breakdown?.mora || 0)}</span>
+                                                <div style={{ color: 'var(--danger-light)', fontWeight: '600' }}>
+                                                    {formatCurrency(payment.breakdown?.mora || 0)}
+                                                </div>
                                             </div>
                                         </div>
 
-                                        <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
+                                        {payment.note && (
+                                            <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '8px', fontStyle: 'italic' }}>
+                                                Nota: {payment.note}
+                                            </div>
+                                        )}
+
+                                        <div style={{ display: 'flex', gap: '6px', marginTop: '10px', flexWrap: 'wrap' }}>
                                             <button className="btn btn-ghost btn-xs" onClick={(e) => { e.stopPropagation(); onViewReceipt(payment); }}>
                                                 <IconSVG.FileText /> Recibo
                                             </button>
@@ -1931,60 +1962,41 @@
     };
 
     // ============================================================
-    // 12. COMPONENT: PAYMENT MODAL
+    // 11. COMPONENT: COBRAR MODAL (pago completo de una cuota)
     // ============================================================
 
-    const PaymentModal = ({ isOpen, onClose, installment, loan, client, user, onSuccess, onError, existingPayment = null }) => {
-        const { refreshAllData, addToast, installments: allInstallments } = useApp();
+    const CobrarModal = ({
+        isOpen, onClose, installment, loan, client, user,
+        onSuccess, onError
+    }) => {
+        const { refreshAllData, addToast } = useApp();
 
-        const [step, setStep] = useState('type');
-        const [paymentType, setPaymentType] = useState('full_installment');
         const [amount, setAmount] = useState('');
         const [method, setMethod] = useState('Efectivo');
         const [date, setDate] = useState(formatDateLocal(todayLocal()));
         const [note, setNote] = useState('');
         const [loading, setLoading] = useState(false);
         const [error, setError] = useState('');
-        const [previewResult, setPreviewResult] = useState(null);
-        const [paymentResult, setPaymentResult] = useState(null);
-        const [userEditedAmount, setUserEditedAmount] = useState(false);
+        const [step, setStep] = useState('form');
+        const [result, setResult] = useState(null);
 
         const remainingCapital = normalizeMoney(installment?.remainingAmount || installment?.totalAmount || 0);
-        const remainingInterest = normalizeMoney(installment?.interest || 0);
         const remainingMora = installment ? normalizeMoney(MoraEngine.calculateMoraRemaining(installment)) : 0;
-        const totalDue = normalizeMoney(remainingCapital + remainingInterest + remainingMora);
+        const totalDue = normalizeMoney(remainingCapital + remainingMora);
 
         useEffect(() => {
             if (isOpen) {
-                setStep('type');
-                setPaymentType('full_installment');
-                const defaultAmount = totalDue > 0 ? totalDue.toString() : '';
-                setAmount(defaultAmount);
-                setUserEditedAmount(false);
+                setStep('form');
+                setAmount(totalDue > 0 ? totalDue.toString() : '');
                 setMethod('Efectivo');
                 setDate(formatDateLocal(todayLocal()));
                 setNote('');
                 setError('');
-                setPreviewResult(null);
-                setPaymentResult(null);
-
-                if (existingPayment) {
-                    setPaymentType(existingPayment.paymentType || 'full_installment');
-                    setAmount((existingPayment.amount || 0).toString());
-                    setUserEditedAmount(true);
-                    setMethod(existingPayment.method || 'Efectivo');
-                    setDate(existingPayment.paymentDate ? formatDateLocal(existingPayment.paymentDate) : formatDateLocal(todayLocal()));
-                    setNote(existingPayment.note || '');
-                    setStep('form');
-                }
+                setResult(null);
             }
-        }, [isOpen, existingPayment, totalDue]);
+        }, [isOpen, totalDue]);
 
-        const handleAmountChange = (value) => {
-            setAmount(value);
-            setUserEditedAmount(true);
-            setError('');
-        };
+        if (!isOpen || !installment || !loan) return null;
 
         const generatePreview = () => {
             const amountValue = normalizeMoney(parseFloat(amount));
@@ -1992,11 +2004,536 @@
                 setError('Ingresa un monto válido');
                 return;
             }
+            setError('');
 
+            const paymentResult = PaymentEngine.process({ installment, amount: amountValue });
+
+            const preview = {
+                installmentId: installment.id,
+                installmentNumber: installment.number,
+                loanId: loan.id,
+                clientName: client?.fullName || 'Cliente',
+                loanNumber: loan?.loanNumber || 'N/A',
+                receivedAmount: amountValue,
+                date, method, note,
+                allocation: paymentResult.breakdown,
+                after: {
+                    capital: normalizeMoney(remainingCapital - paymentResult.breakdown.capital),
+                    mora: normalizeMoney(remainingMora - paymentResult.breakdown.mora),
+                    total: paymentResult.newRemaining
+                },
+                isFullPayment: paymentResult.isFullPayment,
+                newStatus: paymentResult.newStatus,
+                surplus: paymentResult.change,
+                receiptNumber: `COB-${Date.now().toString(36).toUpperCase()}`,
+                timestamp: new Date().toISOString()
+            };
+
+            setResult(preview);
+            setStep('preview');
+        };
+
+        const confirmCobro = async () => {
+            if (!result) return;
+            setLoading(true);
             setError('');
 
             try {
-                const pendingInstallments = allInstallments
+                await initDatabase();
+
+                await db.transaction('rw',
+                    db.payments, db.installments, db.loans,
+                    db.capitalMovements, db.auditLog, db.lostDebts, db.recoveryMovements, db.lossCompensations,
+                    async () => {
+
+                    const paymentResult = PaymentEngine.process({
+                        installment, amount: result.receivedAmount
+                    });
+
+                    const newPaidAmount = normalizeMoney(
+                        (installment.paidAmount || 0) +
+                        paymentResult.breakdown.capital +
+                        paymentResult.breakdown.interest
+                    );
+                    const newMoraPaid = normalizeMoney(
+                        (installment.moraPaid || 0) + paymentResult.breakdown.mora
+                    );
+                    const newRemaining = normalizeMoney(
+                        Math.max(0, (installment.totalAmount || 0) - newPaidAmount)
+                    );
+                    const newMoraRemaining = normalizeMoney(
+                        Math.max(0, (installment.moraAmount || 0) - newMoraPaid)
+                    );
+
+                    let instStatus = 'pending';
+                    if (newRemaining <= 0.01 && newMoraRemaining <= 0.01) {
+                        instStatus = 'paid';
+                    } else if (newPaidAmount > 0 || newMoraPaid > 0) {
+                        instStatus = 'partial';
+                    } else if (MoraEngine.calculateMoraDays(installment.dueDate) > 0) {
+                        instStatus = 'overdue';
+                    }
+
+                    await db.installments.update(installment.id, {
+                        paidAmount: newPaidAmount,
+                        remainingAmount: newRemaining,
+                        moraPaid: newMoraPaid,
+                        moraRemaining: newMoraRemaining,
+                        status: instStatus
+                    });
+
+                    const paymentId = await db.payments.add({
+                        loanId: loan.id,
+                        clientId: client.id,
+                        installmentId: installment.id,
+                        amount: result.receivedAmount,
+                        paymentDate: result.date,
+                        method: result.method,
+                        note: result.note || `Cobro cuota ${installment.number}`,
+                        breakdown: paymentResult.breakdown,
+                        paymentType: 'full_installment',
+                        receiptNumber: result.receiptNumber,
+                        isFullPayment: paymentResult.isFullPayment,
+                        surplus: normalizeMoney(paymentResult.change),
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString()
+                    });
+
+                    await db.capitalMovements.add({
+                        userId: user.id,
+                        type: 'payment',
+                        amount: result.receivedAmount,
+                        date: result.date,
+                        description: `Cobro cuota ${installment.number} - ${client.fullName}`,
+                        referenceType: 'payment',
+                        referenceId: paymentId,
+                        createdAt: new Date().toISOString()
+                    });
+
+                    // === COMPENSACIÓN DE PÉRDIDAS CON INTERESES ===
+                    if (paymentResult.breakdown.interest > 0) {
+                        const interestToApply = normalizeMoney(paymentResult.breakdown.interest);
+                        const allLostDebts = await db.lostDebts.where({ userId: user.id }).toArray();
+                        const allRecoveries = await db.recoveryMovements.where({ userId: user.id }).toArray();
+                        const allCompensations = await db.lossCompensations.where({ userId: user.id }).toArray();
+
+                        const state = LossCompensationEngine.calculateState(allLostDebts, allRecoveries, allCompensations);
+                        if (state.hasPendingLoss) {
+                            const sortedPending = state.perDebt
+                                .filter(d => !d.isFullyRecovered)
+                                .sort((a, b) => new Date(a.lostAt) - new Date(b.lostAt));
+
+                            const distributions = LossCompensationEngine.distributeInterestToLosses(interestToApply, sortedPending);
+                            const now = new Date().toISOString();
+
+                            for (const dist of distributions) {
+                                const debt = sortedPending.find(d => d.id === dist.lostDebtId);
+                                if (!debt) continue;
+                                const pendingBefore = debt.pending;
+                                const pendingAfter = normalizeMoney(Math.max(0, pendingBefore - dist.amount));
+
+                                await db.lossCompensations.add({
+                                    userId: user.id,
+                                    lostDebtId: debt.id,
+                                    paymentId,
+                                    loanId: loan.id,
+                                    clientId: client.id,
+                                    installmentId: installment.id,
+                                    amountAppliedToLoss: dist.amount,
+                                    interestGenerated: interestToApply,
+                                    moraGenerated: normalizeMoney(paymentResult.breakdown.mora || 0),
+                                    capitalReceived: normalizeMoney(paymentResult.breakdown.capital || 0),
+                                    pendingBefore,
+                                    pendingAfter,
+                                    appliedAt: now,
+                                    description: `Cobro cuota ${installment.number} — ${client.fullName}`,
+                                    createdAt: now
+                                });
+
+                                await db.lostDebts.update(debt.id, {
+                                    recoveredInterest: normalizeMoney((debt.recoveredInterest || 0) + dist.amount),
+                                    status: pendingAfter <= 0.01 ? 'fully_recovered' : 'partial_recovered',
+                                    fullyRecoveredAt: pendingAfter <= 0.01 ? now : null,
+                                    updatedAt: now
+                                });
+                            }
+                        }
+                    }
+                    // === FIN COMPENSACIÓN ===
+
+                    const allInsts = await db.installments.where({ loanId: loan.id }).toArray();
+                    const loanPayments = await db.payments.where({ loanId: loan.id }).toArray();
+
+                    let totalPaid = 0;
+                    for (const p of loanPayments) {
+                        const bd = p.breakdown || {};
+                        totalPaid += normalizeMoney((bd.capital || 0) + (bd.interest || 0) + (bd.mora || 0));
+                    }
+                    totalPaid = normalizeMoney(totalPaid);
+
+                    const currentBalance = normalizeMoney(
+                        Math.max(0, (loan.totalRepayment || 0) - totalPaid)
+                    );
+                    const progress = loan.totalRepayment > 0
+                        ? normalizeMoney((totalPaid / loan.totalRepayment) * 100)
+                        : 0;
+
+                    const allPaid = allInsts.every(i => i.status === 'paid' || i.status === 'cancelled');
+                    const hasOverdue = allInsts.some(i => i.status === 'overdue');
+                    let loanStatus = loan.status;
+                    if (allPaid) loanStatus = 'finished';
+                    else if (hasOverdue) loanStatus = 'overdue';
+                    else if (loan.status === 'overdue') loanStatus = 'active';
+
+                    await db.loans.update(loan.id, {
+                        totalPaid, currentBalance, progress,
+                        status: loanStatus,
+                        updatedAt: new Date().toISOString()
+                    });
+
+                    await db.auditLog.add({
+                        userId: user.id,
+                        timestamp: new Date().toISOString(),
+                        entityType: 'payment',
+                        entityId: paymentId,
+                        action: 'cobro_registered',
+                        description: `Cobro de cuota ${installment.number} por ${formatCurrency(result.receivedAmount)}`,
+                        after: JSON.stringify({
+                            amount: result.receivedAmount,
+                            breakdown: paymentResult.breakdown,
+                            newStatus: instStatus
+                        })
+                    });
+                });
+
+                await refreshAllData();
+                setResult(prev => ({ ...prev, id: 'saved' }));
+                setStep('receipt');
+                addToast('Cobro registrado correctamente', 'success');
+                if (onSuccess) onSuccess(result);
+            } catch (err) {
+                console.error('[COBRAR ERROR]', err);
+                setError(err.message || 'Error al registrar el cobro');
+                if (onError) onError(err);
+            }
+            setLoading(false);
+        };
+
+        return (
+            <div className="modal-overlay" onClick={onClose}>
+                <div className="modal-content" onClick={e => e.stopPropagation()}>
+
+                    {step === 'form' && (
+                        <>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                <div>
+                                    <div style={{ fontSize: '20px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <span style={{ color: 'var(--success)' }}><IconSVG.Check /></span>
+                                        Cobrar cuota
+                                    </div>
+                                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                                        {client?.fullName} · #{loan.loanNumber}
+                                    </div>
+                                </div>
+                                <button onClick={onClose} className="btn btn-ghost btn-sm">
+                                    <IconSVG.X />
+                                </button>
+                            </div>
+
+                            <div style={{
+                                padding: '16px',
+                                background: 'rgba(16,185,129,0.05)',
+                                border: '1px solid rgba(16,185,129,0.15)',
+                                borderRadius: 'var(--radius-md)',
+                                marginBottom: '16px'
+                            }}>
+                                <div style={{ fontSize: '11px', color: 'var(--success)', fontWeight: '600', textTransform: 'uppercase', marginBottom: '8px' }}>
+                                    Cuota #{installment.number}
+                                </div>
+                                <div className="financial-detail-row">
+                                    <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Capital pendiente</span>
+                                    <span style={{ fontWeight: '600' }}>{formatCurrency(remainingCapital)}</span>
+                                </div>
+                                {remainingMora > 0 && (
+                                    <div className="financial-detail-row">
+                                        <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Mora acumulada</span>
+                                        <span style={{ fontWeight: '600', color: 'var(--danger-light)' }}>
+                                            {formatCurrency(remainingMora)}
+                                        </span>
+                                    </div>
+                                )}
+                                <div className="financial-detail-row total">
+                                    <span style={{ color: 'var(--text-secondary)' }}>Valor de la cuota</span>
+                                    <span style={{ color: 'var(--accent-light)' }}>{formatCurrency(totalDue)}</span>
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                                <div>
+                                    <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                                        Valor recibido *
+                                    </label>
+                                    <input type="number" value={amount}
+                                        onChange={(e) => { setAmount(e.target.value); setError(''); }}
+                                        className={`glass-input ${error ? 'error' : ''}`}
+                                        min="0" step="100" autoFocus />
+                                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                                        Precargado con el saldo. Puedes modificarlo.
+                                    </div>
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                                        Método
+                                    </label>
+                                    <select value={method} onChange={e => setMethod(e.target.value)} className="glass-input">
+                                        <option>Efectivo</option>
+                                        <option>Transferencia</option>
+                                        <option>Nequi</option>
+                                        <option>Daviplata</option>
+                                        <option>Tarjeta</option>
+                                        <option>Otro</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
+                                <div>
+                                    <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                                        Fecha de pago
+                                    </label>
+                                    <input type="date" value={date} onChange={e => setDate(e.target.value)} className="glass-input" />
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                                        Observación
+                                    </label>
+                                    <input type="text" value={note} onChange={e => setNote(e.target.value)}
+                                        className="glass-input" placeholder="Opcional" />
+                                </div>
+                            </div>
+
+                            {error && (
+                                <div style={{
+                                    marginTop: '12px', padding: '10px',
+                                    background: 'rgba(239,68,68,0.1)',
+                                    border: '1px solid rgba(239,68,68,0.25)',
+                                    borderRadius: '8px', color: 'var(--danger-light)', fontSize: '12px'
+                                }}>{error}</div>
+                            )}
+
+                            <div style={{ display: 'flex', gap: '10px', marginTop: '18px' }}>
+                                <button className="btn btn-ghost" style={{ flex: 1 }} onClick={onClose}>
+                                    Cancelar
+                                </button>
+                                <button className="btn btn-success" style={{ flex: 1 }} onClick={generatePreview}>
+                                    <IconSVG.Eye /> Ver resumen
+                                </button>
+                            </div>
+                        </>
+                    )}
+
+                    {step === 'preview' && result && (
+                        <>
+                            <button className="back-btn" onClick={() => setStep('form')} style={{ marginBottom: '12px' }}>
+                                <IconSVG.ArrowLeft /> Volver
+                            </button>
+
+                            <div style={{ fontSize: '18px', fontWeight: '700', marginBottom: '14px' }}>
+                                Resumen del cobro
+                            </div>
+
+                            <div style={{
+                                background: 'var(--bg-primary)',
+                                border: '1px solid var(--glass-border)',
+                                borderRadius: 'var(--radius-lg)',
+                                padding: '20px'
+                            }}>
+                                <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center', marginBottom: '12px' }}>
+                                    {result.receiptNumber}
+                                </div>
+
+                                <div className="financial-detail-row">
+                                    <span style={{ color: 'var(--text-muted)' }}>Cliente</span>
+                                    <span style={{ fontWeight: '500' }}>{result.clientName}</span>
+                                </div>
+                                <div className="financial-detail-row">
+                                    <span style={{ color: 'var(--text-muted)' }}>Cuota</span>
+                                    <span style={{ fontWeight: '500' }}>#{result.installmentNumber}</span>
+                                </div>
+                                <div className="financial-detail-row">
+                                    <span style={{ color: 'var(--text-muted)' }}>Valor recibido</span>
+                                    <span style={{ fontWeight: '700', color: 'var(--accent-light)', fontSize: '16px' }}>
+                                        {formatCurrency(result.receivedAmount)}
+                                    </span>
+                                </div>
+
+                                <hr style={{ border: 'none', borderTop: '1px dashed var(--glass-border)', margin: '12px 0' }} />
+
+                                <div className="financial-detail-row">
+                                    <span style={{ color: 'var(--text-muted)' }}>→ Capital</span>
+                                    <span style={{ color: 'var(--accent-light)' }}>
+                                        {formatCurrency(result.allocation.capital)}
+                                    </span>
+                                </div>
+                                <div className="financial-detail-row">
+                                    <span style={{ color: 'var(--text-muted)' }}>→ Intereses</span>
+                                    <span style={{ color: 'var(--warning-light)' }}>
+                                        {formatCurrency(result.allocation.interest)}
+                                    </span>
+                                </div>
+                                {result.allocation.mora > 0 && (
+                                    <div className="financial-detail-row">
+                                        <span style={{ color: 'var(--text-muted)' }}>→ Mora</span>
+                                        <span style={{ color: 'var(--danger-light)' }}>
+                                            {formatCurrency(result.allocation.mora)}
+                                        </span>
+                                    </div>
+                                )}
+
+                                <hr style={{ border: 'none', borderTop: '1px dashed var(--glass-border)', margin: '12px 0' }} />
+
+                                <div className="financial-detail-row total">
+                                    <span style={{ color: 'var(--text-secondary)' }}>Saldo después</span>
+                                    <span style={{
+                                        color: result.after.total <= 0 ? 'var(--success)' : 'var(--text-primary)'
+                                    }}>
+                                        {formatCurrency(result.after.total)}
+                                    </span>
+                                </div>
+
+                                {result.isFullPayment && (
+                                    <div style={{
+                                        marginTop: '12px', padding: '8px 12px',
+                                        background: 'rgba(16,185,129,0.1)',
+                                        borderRadius: 'var(--radius-sm)',
+                                        color: 'var(--success-light)',
+                                        fontSize: '12px', fontWeight: '600',
+                                        textAlign: 'center'
+                                    }}>
+                                        ✓ Cuota completamente pagada
+                                    </div>
+                                )}
+
+                                {!result.isFullPayment && (
+                                    <div style={{
+                                        marginTop: '12px', padding: '8px 12px',
+                                        background: 'rgba(245,158,11,0.1)',
+                                        borderRadius: 'var(--radius-sm)',
+                                        color: 'var(--warning-light)',
+                                        fontSize: '12px', fontWeight: '500',
+                                        textAlign: 'center'
+                                    }}>
+                                        Abono parcial — quedará pendiente {formatCurrency(result.after.total)}
+                                    </div>
+                                )}
+
+                                {result.surplus > 0.01 && (
+                                    <div style={{
+                                        marginTop: '12px', padding: '8px 12px',
+                                        background: 'rgba(99,102,241,0.1)',
+                                        borderRadius: 'var(--radius-sm)',
+                                        color: 'var(--accent-light)',
+                                        fontSize: '12px', fontWeight: '500',
+                                        textAlign: 'center'
+                                    }}>
+                                        Excedente: {formatCurrency(result.surplus)} (no se distribuye automáticamente)
+                                    </div>
+                                )}
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+                                <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => setStep('form')} disabled={loading}>
+                                    <IconSVG.ArrowLeft /> Editar
+                                </button>
+                                <button className="btn btn-success" style={{ flex: 1 }} onClick={confirmCobro} disabled={loading}>
+                                    {loading
+                                        ? <span className="spinner" style={{ width: '18px', height: '18px' }}></span>
+                                        : <><IconSVG.Check /> Confirmar cobro</>}
+                                </button>
+                            </div>
+                        </>
+                    )}
+
+                    {step === 'receipt' && result && (
+                        <>
+                            <div style={{
+                                padding: '12px', background: 'rgba(16,185,129,0.08)',
+                                border: '1px solid rgba(16,185,129,0.15)',
+                                borderRadius: 'var(--radius-md)', marginBottom: '16px',
+                                color: 'var(--success-light)',
+                                fontSize: '14px', fontWeight: '600', textAlign: 'center'
+                            }}>
+                                ✓ Cobro registrado correctamente
+                            </div>
+                            <PaymentReceipt
+                                payment={{
+                                    ...result,
+                                    clientName: client?.fullName,
+                                    loanNumber: loan?.loanNumber,
+                                    remainingBalance: result.after?.total || 0
+                                }}
+                                onClose={onClose}
+                            />
+                        </>
+                    )}
+                </div>
+            </div>
+        );
+    };
+
+    // ============================================================
+    // 12. COMPONENT: ABONAR MODAL (pago parcial con distribución)
+    // ============================================================
+
+    const AbonarModal = ({
+        isOpen, onClose, installment, loan, client, user,
+        onSuccess, onError, existingPayment = null
+    }) => {
+        const { refreshAllData, addToast, installments: allInstallments } = useApp();
+
+        const [step, setStep] = useState('form');
+        const [paymentType, setPaymentType] = useState('custom');
+        const [amount, setAmount] = useState('');
+        const [method, setMethod] = useState('Efectivo');
+        const [date, setDate] = useState(formatDateLocal(todayLocal()));
+        const [note, setNote] = useState('');
+        const [loading, setLoading] = useState(false);
+        const [error, setError] = useState('');
+        const [previewResult, setPreviewResult] = useState(null);
+        const [receiptData, setReceiptData] = useState(null);
+
+        const remainingCapital = normalizeMoney(installment?.remainingAmount || installment?.totalAmount || 0);
+        const remainingMora = installment ? normalizeMoney(MoraEngine.calculateMoraRemaining(installment)) : 0;
+        const totalDue = normalizeMoney(remainingCapital + remainingMora);
+
+        useEffect(() => {
+            if (isOpen) {
+                setStep('form');
+                setPaymentType(existingPayment?.paymentType || 'custom');
+                setAmount(existingPayment?.amount?.toString() || '');
+                setMethod(existingPayment?.method || 'Efectivo');
+                setDate(existingPayment?.paymentDate
+                    ? formatDateLocal(existingPayment.paymentDate)
+                    : formatDateLocal(todayLocal()));
+                setNote(existingPayment?.note || '');
+                setError('');
+                setPreviewResult(null);
+                setReceiptData(null);
+            }
+        }, [isOpen, existingPayment]);
+
+        if (!isOpen || !installment || !loan) return null;
+
+        const generatePreview = () => {
+            const amountValue = normalizeMoney(parseFloat(amount));
+            if (!amountValue || amountValue <= 0) {
+                setError('Ingresa un monto válido');
+                return;
+            }
+            setError('');
+
+            try {
+                const pendingInstallments = (allInstallments || [])
                     .filter(i => i.loanId === loan.id && i.status !== 'paid' && i.status !== 'cancelled')
                     .sort((a, b) => a.number - b.number);
 
@@ -2010,288 +2547,495 @@
                 );
 
                 if (distribution.distributed.length === 0) {
-                    setError('No se pudo aplicar el pago a ninguna cuota');
+                    setError('No se pudo aplicar el abono a ninguna cuota');
                     return;
                 }
 
                 const breakdown = { capital: 0, interest: 0, mora: 0 };
-                let totalPaid = 0;
-                const distributionDetails = [];
+                let totalApplied = 0;
+                const details = [];
 
                 for (const dist of distribution.distributed) {
                     const inst = allInstallments.find(i => i.id === dist.installmentId);
                     if (!inst) continue;
 
-                    const result = PaymentEngine.process({ installment: inst, amount: dist.appliedAmount });
+                    const result = PaymentEngine.process({
+                        installment: inst, amount: dist.appliedAmount
+                    });
 
                     breakdown.capital = normalizeMoney(breakdown.capital + result.breakdown.capital);
                     breakdown.interest = normalizeMoney(breakdown.interest + result.breakdown.interest);
                     breakdown.mora = normalizeMoney(breakdown.mora + result.breakdown.mora);
-                    totalPaid = normalizeMoney(totalPaid + result.totalPaid);
+                    totalApplied = normalizeMoney(totalApplied + result.totalPaid);
 
-                    distributionDetails.push({
+                    details.push({
                         installmentNumber: inst.number,
+                        installmentId: inst.id,
                         applied: dist.appliedAmount,
-                        isFullyPaid: dist.isFullyPaid
+                        isFullyPaid: dist.isFullyPaid,
+                        newRemaining: dist.newRemaining,
+                        breakdown: result.breakdown
                     });
                 }
 
-                const totalCapitalAfter = normalizeMoney(remainingCapital - breakdown.capital);
-                const totalInterestAfter = normalizeMoney(remainingInterest - breakdown.interest);
-                const totalMoraAfter = normalizeMoney(remainingMora - breakdown.mora);
-                const totalAfter = normalizeMoney(totalCapitalAfter + totalInterestAfter + totalMoraAfter);
-
-                const allPaid = distribution.distributed.every(d => d.isFullyPaid);
-                const wasFullPayment = amountValue >= totalDue;
-
                 const preview = {
                     installmentId: installment.id,
+                    installmentNumber: installment.number,
                     loanId: loan.id,
                     clientName: client?.fullName || 'Cliente',
                     loanNumber: loan?.loanNumber || 'N/A',
-                    paymentType, receivedAmount: amountValue,
+                    paymentType,
+                    receivedAmount: amountValue,
                     date, method, note,
-                    user: user ? user.id : null,
                     allocation: breakdown,
-                    installmentStatus: allPaid ? 'paid' : 'partial',
-                    isFullPayment: wasFullPayment,
-                    surplus: normalizeMoney(amountValue - totalPaid),
-                    after: {
-                        capital: totalCapitalAfter,
-                        interest: totalInterestAfter,
-                        mora: totalMoraAfter,
-                        total: totalAfter
-                    },
-                    timestamp: new Date().toISOString(),
-                    receiptNumber: `REC-${Date.now().toString(36).toUpperCase()}`,
-                    originalValues: {
-                        capital: remainingCapital,
-                        interest: remainingInterest,
-                        mora: remainingMora,
-                        total: totalDue
-                    },
-                    distribution: distributionDetails
+                    totalApplied: normalizeMoney(totalApplied),
+                    surplus: normalizeMoney(amountValue - totalApplied),
+                    distribution: details,
+                    receiptNumber: `ABO-${Date.now().toString(36).toUpperCase()}`,
+                    timestamp: new Date().toISOString()
                 };
 
                 setPreviewResult(preview);
                 setStep('preview');
             } catch (err) {
-                setError(err.message || 'Error generando vista previa');
+                console.error('[ABONAR PREVIEW ERROR]', err);
+                setError(err.message || 'Error al generar la vista previa');
             }
         };
 
-        const confirmPayment = async () => {
+        const confirmAbono = async () => {
             if (!previewResult) return;
-
             setLoading(true);
             setError('');
 
             try {
                 await initDatabase();
-                const result = previewResult;
-                const allLoanInstallments = await db.installments.where({ loanId: loan.id }).toArray();
 
-                await db.transaction('rw', db.payments, db.installments, db.loans, db.capitalMovements, db.auditLog, async () => {
-                    const paymentRecords = [];
-                    let totalCapitalPaid = 0, totalInterestPaid = 0, totalMoraPaid = 0;
+                await db.transaction('rw',
+                    db.payments, db.installments, db.loans,
+                    db.capitalMovements, db.auditLog, db.lostDebts, db.recoveryMovements, db.lossCompensations,
+                    async () => {
 
-                    for (const dist of result.distribution) {
-                        const inst = allLoanInstallments.find(i => i.number === dist.installmentNumber);
+                    const allLoanInstallments = await db.installments
+                        .where({ loanId: loan.id }).toArray();
+
+                    const receipts = [];
+
+                    for (const dist of previewResult.distribution) {
+                        const inst = allLoanInstallments.find(i => i.id === dist.installmentId);
                         if (!inst) continue;
 
-                        const paymentResult = PaymentEngine.process({ installment: inst, amount: dist.applied });
+                        const paymentResult = PaymentEngine.process({
+                            installment: inst, amount: dist.applied
+                        });
 
-                        const newPaidAmount = normalizeMoney((inst.paidAmount || 0) + paymentResult.breakdown.capital + paymentResult.breakdown.interest);
-                        const newMoraPaid = normalizeMoney((inst.moraPaid || 0) + paymentResult.breakdown.mora);
-                        const newRemaining = normalizeMoney(Math.max(0, (inst.totalAmount || 0) - newPaidAmount));
+                        const newPaidAmount = normalizeMoney(
+                            (inst.paidAmount || 0) +
+                            paymentResult.breakdown.capital +
+                            paymentResult.breakdown.interest
+                        );
+                        const newMoraPaid = normalizeMoney(
+                            (inst.moraPaid || 0) + paymentResult.breakdown.mora
+                        );
+                        const newRemaining = normalizeMoney(
+                            Math.max(0, (inst.totalAmount || 0) - newPaidAmount)
+                        );
+                        const newMoraRemaining = normalizeMoney(
+                            Math.max(0, (inst.moraAmount || 0) - newMoraPaid)
+                        );
 
-                        const instStatus = dist.isFullyPaid ? 'paid' :
-                            (paymentResult.breakdown.capital > 0 || paymentResult.breakdown.interest > 0 || paymentResult.breakdown.mora > 0) ? 'partial' : 'pending';
+                        let instStatus = 'pending';
+                        if (newRemaining <= 0.01 && newMoraRemaining <= 0.01) instStatus = 'paid';
+                        else if (newPaidAmount > 0 || newMoraPaid > 0) instStatus = 'partial';
+                        else if (MoraEngine.calculateMoraDays(inst.dueDate) > 0) instStatus = 'overdue';
 
                         await db.installments.update(inst.id, {
                             paidAmount: newPaidAmount,
                             remainingAmount: newRemaining,
                             moraPaid: newMoraPaid,
-                            moraRemaining: normalizeMoney(Math.max(0, (inst.moraAmount || 0) - newMoraPaid)),
+                            moraRemaining: newMoraRemaining,
                             status: instStatus
                         });
 
-                        const paymentData = {
+                        const receiptNumber = `${previewResult.receiptNumber}-C${inst.number}`;
+                        const paymentId = await db.payments.add({
                             loanId: loan.id,
                             clientId: client.id,
                             installmentId: inst.id,
                             amount: dist.applied,
-                            paymentDate: result.date,
-                            method: result.method,
-                            note: result.note || `Cuota ${inst.number}`,
+                            paymentDate: previewResult.date,
+                            method: previewResult.method,
+                            note: previewResult.note || `Abono cuota ${inst.number}`,
                             breakdown: paymentResult.breakdown,
-                            paymentType: result.paymentType,
-                            receiptNumber: `${result.receiptNumber}-${inst.number}`,
+                            paymentType: previewResult.paymentType,
+                            receiptNumber,
                             isFullPayment: dist.isFullyPaid,
                             surplus: 0,
                             createdAt: new Date().toISOString(),
                             updatedAt: new Date().toISOString()
-                        };
-
-                        const paymentId = await db.payments.add(paymentData);
-                        paymentRecords.push({ ...paymentData, id: paymentId });
-
-                        totalCapitalPaid = normalizeMoney(totalCapitalPaid + paymentResult.breakdown.capital);
-                        totalInterestPaid = normalizeMoney(totalInterestPaid + paymentResult.breakdown.interest);
-                        totalMoraPaid = normalizeMoney(totalMoraPaid + paymentResult.breakdown.mora);
+                        });
 
                         await db.capitalMovements.add({
                             userId: user.id,
                             type: 'payment',
                             amount: dist.applied,
-                            date: result.date,
-                            description: `Pago ${client.fullName} - ${loan.loanNumber} - Cuota ${inst.number}`,
+                            date: previewResult.date,
+                            description: `Abono cuota ${inst.number} - ${client.fullName}`,
                             referenceType: 'payment',
                             referenceId: paymentId,
                             createdAt: new Date().toISOString()
                         });
+
+                        // === COMPENSACIÓN DE PÉRDIDAS POR INTERÉS DE ESTE ABONO ===
+                        if (paymentResult.breakdown.interest > 0) {
+                            const interestToApply = normalizeMoney(paymentResult.breakdown.interest);
+                            const allLostDebts = await db.lostDebts.where({ userId: user.id }).toArray();
+                            const allRecoveries = await db.recoveryMovements.where({ userId: user.id }).toArray();
+                            const allCompensations = await db.lossCompensations.where({ userId: user.id }).toArray();
+
+                            const state = LossCompensationEngine.calculateState(allLostDebts, allRecoveries, allCompensations);
+                            if (state.hasPendingLoss) {
+                                const sortedPending = state.perDebt
+                                    .filter(d => !d.isFullyRecovered)
+                                    .sort((a, b) => new Date(a.lostAt) - new Date(b.lostAt));
+
+                                const distributions = LossCompensationEngine.distributeInterestToLosses(interestToApply, sortedPending);
+                                const now = new Date().toISOString();
+
+                                for (const d of distributions) {
+                                    const debt = sortedPending.find(x => x.id === d.lostDebtId);
+                                    if (!debt) continue;
+                                    const pendingBefore = debt.pending;
+                                    const pendingAfter = normalizeMoney(Math.max(0, pendingBefore - d.amount));
+
+                                    await db.lossCompensations.add({
+                                        userId: user.id,
+                                        lostDebtId: debt.id,
+                                        paymentId,
+                                        loanId: loan.id,
+                                        clientId: client.id,
+                                        installmentId: inst.id,
+                                        amountAppliedToLoss: d.amount,
+                                        interestGenerated: interestToApply,
+                                        moraGenerated: normalizeMoney(paymentResult.breakdown.mora || 0),
+                                        capitalReceived: normalizeMoney(paymentResult.breakdown.capital || 0),
+                                        pendingBefore,
+                                        pendingAfter,
+                                        appliedAt: now,
+                                        description: `Abono cuota ${inst.number} — ${client.fullName}`,
+                                        createdAt: now
+                                    });
+
+                                    await db.lostDebts.update(debt.id, {
+                                        recoveredInterest: normalizeMoney((debt.recoveredInterest || 0) + d.amount),
+                                        status: pendingAfter <= 0.01 ? 'fully_recovered' : 'partial_recovered',
+                                        fullyRecoveredAt: pendingAfter <= 0.01 ? now : null,
+                                        updatedAt: now
+                                    });
+                                }
+                            }
+                        }
+                        // === FIN COMPENSACIÓN ===
+
+                        receipts.push({
+                            installmentNumber: inst.number,
+                            applied: dist.applied,
+                            breakdown: paymentResult.breakdown,
+                            isFullPayment: dist.isFullyPaid,
+                            newRemaining,
+                            receiptNumber
+                        });
                     }
 
-                    const totalPaid = normalizeMoney((loan.totalPaid || 0) + totalCapitalPaid + totalInterestPaid + totalMoraPaid);
-                    const currentBalance = normalizeMoney(Math.max(0, (loan.totalRepayment || 0) - totalPaid));
-                    const progress = loan.totalRepayment > 0 ? normalizeMoney((totalPaid / loan.totalRepayment) * 100) : 0;
+                    const refreshedInsts = await db.installments.where({ loanId: loan.id }).toArray();
+                    const loanPayments = await db.payments.where({ loanId: loan.id }).toArray();
 
-                    const updatedInstallments = await db.installments.where({ loanId: loan.id }).toArray();
-                    const allPaid = updatedInstallments.every(i => i.status === 'paid' || i.status === 'cancelled');
-                    const hasOverdue = updatedInstallments.some(i => i.status === 'overdue');
+                    let totalPaid = 0;
+                    for (const p of loanPayments) {
+                        const bd = p.breakdown || {};
+                        totalPaid += normalizeMoney((bd.capital || 0) + (bd.interest || 0) + (bd.mora || 0));
+                    }
+                    totalPaid = normalizeMoney(totalPaid);
 
+                    const currentBalance = normalizeMoney(
+                        Math.max(0, (loan.totalRepayment || 0) - totalPaid)
+                    );
+                    const progress = loan.totalRepayment > 0
+                        ? normalizeMoney((totalPaid / loan.totalRepayment) * 100)
+                        : 0;
+
+                    const allPaid = refreshedInsts.every(i => i.status === 'paid' || i.status === 'cancelled');
+                    const hasOverdue = refreshedInsts.some(i => i.status === 'overdue');
                     let loanStatus = loan.status;
                     if (allPaid) loanStatus = 'finished';
                     else if (hasOverdue) loanStatus = 'overdue';
                     else if (loan.status === 'overdue') loanStatus = 'active';
 
                     await db.loans.update(loan.id, {
-                        totalPaid, currentBalance, progress, status: loanStatus,
+                        totalPaid, currentBalance, progress,
+                        status: loanStatus,
                         updatedAt: new Date().toISOString()
+                    });
+
+                    await db.auditLog.add({
+                        userId: user.id,
+                        timestamp: new Date().toISOString(),
+                        entityType: 'payment',
+                        entityId: `abono-${Date.now()}`,
+                        action: 'abono_registered',
+                        description: `Abono de ${formatCurrency(previewResult.receivedAmount)} distribuido en ${receipts.length} cuota(s)`,
+                        after: JSON.stringify({
+                            received: previewResult.receivedAmount,
+                            breakdown: previewResult.allocation,
+                            installments: receipts
+                        })
+                    });
+
+                    setReceiptData({
+                        ...previewResult,
+                        receipts
                     });
                 });
 
                 await refreshAllData();
-                setPaymentResult({ ...previewResult, id: 'payment_saved' });
                 setStep('receipt');
-                addToast('Abono registrado correctamente', 'success');
+                addToast(
+                    `Abono registrado y distribuido en ${previewResult.distribution.length} cuota(s)`,
+                    'success'
+                );
                 if (onSuccess) onSuccess(previewResult);
-
             } catch (err) {
-                console.error('[PAYMENT ERROR]', err);
-                setError(err.message || 'Error al guardar el pago');
+                console.error('[ABONAR ERROR]', err);
+                setError(err.message || 'Error al registrar el abono');
                 if (onError) onError(err);
             }
-
             setLoading(false);
         };
-
-        const renderFormStep = () => (
-            <>
-                <div style={{ fontSize: '18px', fontWeight: '700', marginBottom: '4px' }}>
-                    {existingPayment ? 'Editar abono' : 'Registrar abono'}
-                </div>
-                <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-                    {client?.fullName} · {loan?.loanNumber}
-                </div>
-
-                <div style={{
-                    padding: '12px', background: 'rgba(255,255,255,0.02)',
-                    borderRadius: 'var(--radius-md)', marginBottom: '16px',
-                    display: 'grid', gridTemplateColumns: '1fr 1fr 1fr',
-                    gap: '8px', fontSize: '12px'
-                }}>
-                    <div>
-                        <span style={{ color: 'var(--text-muted)' }}>Capital:</span>
-                        <div style={{ fontWeight: '600', color: 'var(--accent-light)' }}>{formatCurrency(remainingCapital)}</div>
-                    </div>
-                    <div>
-                        <span style={{ color: 'var(--text-muted)' }}>Intereses:</span>
-                        <div style={{ fontWeight: '600', color: 'var(--warning-light)' }}>{formatCurrency(remainingInterest)}</div>
-                    </div>
-                    <div>
-                        <span style={{ color: 'var(--text-muted)' }}>Mora:</span>
-                        <div style={{ fontWeight: '600', color: 'var(--danger-light)' }}>{formatCurrency(remainingMora)}</div>
-                    </div>
-                </div>
-
-                <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '8px' }}>Tipo de abono:</div>
-                <PaymentTypes selected={paymentType} onSelect={setPaymentType} disabled={!!existingPayment} />
-
-                <div style={{ marginTop: '16px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                        <div>
-                            <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                                Valor recibido *
-                            </label>
-                            <input type="number" value={amount}
-                                onChange={(e) => handleAmountChange(e.target.value)}
-                                className={`glass-input ${error ? 'error' : ''}`}
-                                placeholder={formatCurrency(totalDue)}
-                                required min="0" step="100" />
-                            <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                                {!userEditedAmount && totalDue > 0 ? `Saldo: ${formatCurrency(totalDue)}` : userEditedAmount ? 'Valor personalizado' : ''}
-                            </div>
-                        </div>
-                        <div>
-                            <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Método</label>
-                            <select value={method} onChange={(e) => setMethod(e.target.value)} className="glass-input">
-                                <option>Efectivo</option>
-                                <option>Transferencia</option>
-                                <option>Nequi</option>
-                                <option>Daviplata</option>
-                                <option>Tarjeta</option>
-                                <option>Otro</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
-                        <div>
-                            <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Fecha de pago</label>
-                            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="glass-input" />
-                        </div>
-                        <div>
-                            <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Observación</label>
-                            <input type="text" value={note} onChange={(e) => setNote(e.target.value)} className="glass-input" placeholder="Opcional" />
-                        </div>
-                    </div>
-                </div>
-
-                {error && (
-                    <div style={{
-                        marginTop: '12px', padding: '10px',
-                        background: 'rgba(239,68,68,0.1)',
-                        border: '1px solid rgba(239,68,68,0.25)',
-                        borderRadius: '8px', color: 'var(--danger-light)', fontSize: '12px'
-                    }}>{error}</div>
-                )}
-
-                <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
-                    <button className="btn btn-ghost" style={{ flex: 1 }} onClick={onClose}>Cancelar</button>
-                    <button className="btn btn-primary" style={{ flex: 1 }} onClick={generatePreview}>
-                        <IconSVG.Eye /> Ver resumen
-                    </button>
-                </div>
-            </>
-        );
-
-        if (!isOpen) return null;
 
         return (
             <div className="modal-overlay" onClick={onClose}>
                 <div className="modal-content" onClick={e => e.stopPropagation()}>
-                    {step === 'type' && renderFormStep()}
-                    {step === 'form' && renderFormStep()}
-                    {step === 'preview' && (
+
+                    {step === 'form' && (
                         <>
-                            <button className="back-btn" onClick={() => setStep('form')} style={{ marginBottom: '8px' }}>
-                                <IconSVG.ArrowLeft /> Volver
-                            </button>
-                            <PaymentPreview result={previewResult} onConfirm={confirmPayment} onCancel={() => setStep('form')} loading={loading} />
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                <div>
+                                    <div style={{ fontSize: '20px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <span style={{ color: 'var(--accent-light)' }}><IconSVG.Receipt /></span>
+                                        {existingPayment ? 'Editar abono' : 'Registrar abono'}
+                                    </div>
+                                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                                        {client?.fullName} · #{loan.loanNumber}
+                                    </div>
+                                </div>
+                                <button onClick={onClose} className="btn btn-ghost btn-sm">
+                                    <IconSVG.X />
+                                </button>
+                            </div>
+
+                            <div style={{
+                                padding: '14px',
+                                background: 'rgba(99,102,241,0.05)',
+                                border: '1px solid rgba(99,102,241,0.15)',
+                                borderRadius: 'var(--radius-md)',
+                                marginBottom: '14px'
+                            }}>
+                                <div style={{ fontSize: '11px', color: 'var(--accent-light)', fontWeight: '600', textTransform: 'uppercase', marginBottom: '8px' }}>
+                                    Cuota #{installment.number} seleccionada
+                                </div>
+                                <div className="financial-detail-row">
+                                    <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Saldo de esta cuota</span>
+                                    <span style={{ fontWeight: '600' }}>{formatCurrency(totalDue)}</span>
+                                </div>
+                            </div>
+
+                            {!existingPayment && (
+                                <>
+                                    <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '8px' }}>
+                                        Tipo de abono:
+                                    </div>
+                                    <PaymentTypes selected={paymentType} onSelect={setPaymentType} />
+                                </>
+                            )}
+
+                            <div style={{ marginTop: '16px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                                    <div>
+                                        <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                                            Valor del abono *
+                                        </label>
+                                        <input type="number" value={amount}
+                                            onChange={(e) => { setAmount(e.target.value); setError(''); }}
+                                            className={`glass-input ${error ? 'error' : ''}`}
+                                            placeholder="Ej: 100000" min="0" step="100" autoFocus />
+                                    </div>
+                                    <div>
+                                        <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                                            Método
+                                        </label>
+                                        <select value={method} onChange={e => setMethod(e.target.value)} className="glass-input">
+                                            <option>Efectivo</option>
+                                            <option>Transferencia</option>
+                                            <option>Nequi</option>
+                                            <option>Daviplata</option>
+                                            <option>Tarjeta</option>
+                                            <option>Otro</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
+                                    <div>
+                                        <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                                            Fecha
+                                        </label>
+                                        <input type="date" value={date} onChange={e => setDate(e.target.value)} className="glass-input" />
+                                    </div>
+                                    <div>
+                                        <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                                            Observación
+                                        </label>
+                                        <input type="text" value={note} onChange={e => setNote(e.target.value)}
+                                            className="glass-input" placeholder="Opcional" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {error && (
+                                <div style={{
+                                    marginTop: '12px', padding: '10px',
+                                    background: 'rgba(239,68,68,0.1)',
+                                    border: '1px solid rgba(239,68,68,0.25)',
+                                    borderRadius: '8px', color: 'var(--danger-light)', fontSize: '12px'
+                                }}>{error}</div>
+                            )}
+
+                            <div style={{ display: 'flex', gap: '10px', marginTop: '18px' }}>
+                                <button className="btn btn-ghost" style={{ flex: 1 }} onClick={onClose}>
+                                    Cancelar
+                                </button>
+                                <button className="btn btn-primary" style={{ flex: 1 }} onClick={generatePreview}>
+                                    <IconSVG.Eye /> Ver distribución
+                                </button>
+                            </div>
                         </>
                     )}
-                    {step === 'receipt' && (
+
+                    {step === 'preview' && previewResult && (
+                        <>
+                            <button className="back-btn" onClick={() => setStep('form')} style={{ marginBottom: '12px' }}>
+                                <IconSVG.ArrowLeft /> Volver
+                            </button>
+
+                            <div style={{ fontSize: '18px', fontWeight: '700', marginBottom: '14px' }}>
+                                Resumen del abono
+                            </div>
+
+                            <div style={{
+                                background: 'var(--bg-primary)',
+                                border: '1px solid var(--glass-border)',
+                                borderRadius: 'var(--radius-lg)',
+                                padding: '20px', marginBottom: '12px'
+                            }}>
+                                <div className="financial-detail-row">
+                                    <span style={{ color: 'var(--text-muted)' }}>Cliente</span>
+                                    <span style={{ fontWeight: '500' }}>{previewResult.clientName}</span>
+                                </div>
+                                <div className="financial-detail-row">
+                                    <span style={{ color: 'var(--text-muted)' }}>Valor recibido</span>
+                                    <span style={{ fontWeight: '700', color: 'var(--accent-light)', fontSize: '16px' }}>
+                                        {formatCurrency(previewResult.receivedAmount)}
+                                    </span>
+                                </div>
+
+                                <hr style={{ border: 'none', borderTop: '1px dashed var(--glass-border)', margin: '12px 0' }} />
+
+                                <div className="financial-detail-row">
+                                    <span style={{ color: 'var(--text-muted)' }}>→ Capital</span>
+                                    <span style={{ color: 'var(--accent-light)' }}>
+                                        {formatCurrency(previewResult.allocation.capital)}
+                                    </span>
+                                </div>
+                                <div className="financial-detail-row">
+                                    <span style={{ color: 'var(--text-muted)' }}>→ Intereses</span>
+                                    <span style={{ color: 'var(--warning-light)' }}>
+                                        {formatCurrency(previewResult.allocation.interest)}
+                                    </span>
+                                </div>
+                                {previewResult.allocation.mora > 0 && (
+                                    <div className="financial-detail-row">
+                                        <span style={{ color: 'var(--text-muted)' }}>→ Mora</span>
+                                        <span style={{ color: 'var(--danger-light)' }}>
+                                            {formatCurrency(previewResult.allocation.mora)}
+                                        </span>
+                                    </div>
+                                )}
+
+                                {previewResult.surplus > 0.01 && (
+                                    <div className="financial-detail-row">
+                                        <span style={{ color: 'var(--text-muted)' }}>→ Excedente (no aplicado)</span>
+                                        <span style={{ color: 'var(--text-muted)' }}>
+                                            {formatCurrency(previewResult.surplus)}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '8px' }}>
+                                Distribución entre cuotas
+                            </div>
+
+                            {previewResult.distribution.map((d, idx) => (
+                                <div key={idx} style={{
+                                    padding: '12px',
+                                    background: d.isFullyPaid
+                                        ? 'rgba(16,185,129,0.05)'
+                                        : 'rgba(245,158,11,0.05)',
+                                    border: `1px solid ${d.isFullyPaid
+                                        ? 'rgba(16,185,129,0.2)'
+                                        : 'rgba(245,158,11,0.2)'}`,
+                                    borderRadius: 'var(--radius-md)',
+                                    marginBottom: '6px'
+                                }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <span style={{
+                                                fontWeight: '600',
+                                                color: d.isFullyPaid ? 'var(--success)' : 'var(--warning)'
+                                            }}>
+                                                Cuota {d.installmentNumber}
+                                            </span>
+                                            <span className={`badge ${d.isFullyPaid ? 'badge-success' : 'badge-warning'}`}
+                                                style={{ padding: '2px 8px', fontSize: '10px' }}>
+                                                {d.isFullyPaid ? 'Pagada completa' : 'Abono parcial'}
+                                            </span>
+                                        </div>
+                                        <span style={{ fontWeight: '700', color: 'var(--accent-light)' }}>
+                                            {formatCurrency(d.applied)}
+                                        </span>
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                                        Saldo restante: <span style={{ fontWeight: '600', color: d.newRemaining <= 0 ? 'var(--success)' : 'var(--warning)' }}>
+                                            {formatCurrency(d.newRemaining)}
+                                        </span>
+                                    </div>
+                                </div>
+                            ))}
+
+                            <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+                                <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => setStep('form')} disabled={loading}>
+                                    <IconSVG.ArrowLeft /> Editar
+                                </button>
+                                <button className="btn btn-primary" style={{ flex: 1 }} onClick={confirmAbono} disabled={loading}>
+                                    {loading
+                                        ? <span className="spinner" style={{ width: '18px', height: '18px' }}></span>
+                                        : <><IconSVG.Check /> Confirmar abono</>}
+                                </button>
+                            </div>
+                        </>
+                    )}
+
+                    {step === 'receipt' && receiptData && (
                         <>
                             <div style={{
                                 padding: '12px', background: 'rgba(16,185,129,0.08)',
@@ -2300,17 +3044,70 @@
                                 color: 'var(--success-light)',
                                 fontSize: '14px', fontWeight: '600', textAlign: 'center'
                             }}>
-                                Abono registrado correctamente
+                                ✓ Abono registrado y distribuido
                             </div>
-                            <PaymentReceipt
-                                payment={{
-                                    ...paymentResult,
-                                    clientName: client?.fullName,
-                                    loanNumber: loan?.loanNumber,
-                                    remainingBalance: paymentResult?.after?.total || 0
-                                }}
-                                onClose={onClose}
-                            />
+
+                            <div style={{
+                                background: 'var(--bg-primary)',
+                                border: '1px solid var(--glass-border)',
+                                borderRadius: 'var(--radius-lg)',
+                                padding: '20px'
+                            }}>
+                                <div style={{ textAlign: 'center', marginBottom: '12px' }}>
+                                    <div style={{ fontSize: '16px', fontWeight: '700', color: 'var(--accent-light)' }}>
+                                        LOANS W
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                        {receiptData.receiptNumber}
+                                    </div>
+                                </div>
+
+                                <div className="financial-detail-row">
+                                    <span style={{ color: 'var(--text-muted)' }}>Cliente</span>
+                                    <span style={{ fontWeight: '500' }}>{receiptData.clientName}</span>
+                                </div>
+                                <div className="financial-detail-row">
+                                    <span style={{ color: 'var(--text-muted)' }}>Préstamo</span>
+                                    <span style={{ fontWeight: '500' }}>#{receiptData.loanNumber}</span>
+                                </div>
+                                <div className="financial-detail-row">
+                                    <span style={{ color: 'var(--text-muted)' }}>Valor total</span>
+                                    <span style={{ fontWeight: '700', color: 'var(--accent-light)', fontSize: '16px' }}>
+                                        {formatCurrency(receiptData.receivedAmount)}
+                                    </span>
+                                </div>
+
+                                <hr style={{ border: 'none', borderTop: '1px dashed var(--glass-border)', margin: '12px 0' }} />
+
+                                {receiptData.receipts.map((r, idx) => (
+                                    <div key={idx} style={{
+                                        padding: '10px', marginBottom: '6px',
+                                        background: r.isFullPayment ? 'rgba(16,185,129,0.05)' : 'rgba(245,158,11,0.05)',
+                                        borderRadius: 'var(--radius-sm)'
+                                    }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <span style={{ fontWeight: '600', fontSize: '12px' }}>
+                                                Cuota {r.installmentNumber}
+                                            </span>
+                                            <span style={{ fontWeight: '700', color: 'var(--accent-light)', fontSize: '13px' }}>
+                                                {formatCurrency(r.applied)}
+                                            </span>
+                                        </div>
+                                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>
+                                            Saldo restante: {formatCurrency(r.newRemaining)} · {r.isFullPayment ? '✓ Pagada' : '◐ Parcial'}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                                <button className="btn btn-ghost" style={{ flex: 1 }} onClick={onClose}>
+                                    Cerrar
+                                </button>
+                                <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => window.print()}>
+                                    <IconSVG.Printer /> Imprimir
+                                </button>
+                            </div>
                         </>
                     )}
                 </div>
@@ -2323,7 +3120,7 @@
     // ============================================================
 
     const PaymentDelete = ({ payment, isOpen, onClose, onSuccess, onError }) => {
-        const { refreshAllData, addToast, user } = useApp();
+        const { refreshAllData, addToast } = useApp();
         const [loading, setLoading] = useState(false);
 
         if (!payment || !isOpen) return null;
@@ -2337,11 +3134,23 @@
 
                 if (!loan || !installment) throw new Error('Datos no encontrados');
 
-                await db.transaction('rw', db.payments, db.installments, db.loans, db.capitalMovements, db.auditLog, async () => {
+                await db.transaction('rw', db.payments, db.installments, db.loans, db.capitalMovements, db.auditLog, db.lossCompensations, async () => {
                     const bd = payment.breakdown || {};
                     const capitalPaid = normalizeMoney(bd.capital || 0);
                     const interestPaid = normalizeMoney(bd.interest || 0);
                     const moraPaid = normalizeMoney(bd.mora || 0);
+
+                    const linkedCompensations = await db.lossCompensations.where({ paymentId: payment.id }).toArray();
+                    for (const comp of linkedCompensations) {
+                        const debt = await db.lostDebts.get(comp.lostDebtId);
+                        if (debt) {
+                            await db.lostDebts.update(comp.lostDebtId, {
+                                recoveredInterest: normalizeMoney(Math.max(0, (debt.recoveredInterest || 0) - comp.amountAppliedToLoss)),
+                                updatedAt: new Date().toISOString()
+                            });
+                        }
+                        await db.lossCompensations.delete(comp.id);
+                    }
 
                     const newPaidAmount = normalizeMoney(Math.max(0, (installment.paidAmount || 0) - capitalPaid - interestPaid));
                     const newMoraPaid = normalizeMoney(Math.max(0, (installment.moraPaid || 0) - moraPaid));
@@ -2396,11 +3205,11 @@
                     <div style={{ fontSize: '36px', marginBottom: '10px', color: 'var(--danger)' }}>
                         <IconSVG.AlertTriangle />
                     </div>
-                    <div style={{ fontSize: '18px', fontWeight: '700', marginBottom: '6px' }}>Eliminar abono</div>
+                    <div style={{ fontSize: '18px', fontWeight: '700', marginBottom: '6px' }}>Eliminar pago</div>
                     <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px', lineHeight: '1.5' }}>
-                        ¿Eliminar el abono de {formatCurrency(payment.amount)}?
+                        ¿Eliminar el pago de {formatCurrency(payment.amount)}?
                         <br /><br />
-                        Esta acción revertirá completamente los efectos financieros de este pago.
+                        Esta acción revertirá los efectos financieros de este pago, incluyendo cualquier compensación de pérdidas aplicada.
                     </div>
                     <div style={{ display: 'flex', gap: '10px' }}>
                         <button className="btn btn-ghost" style={{ flex: 1 }} onClick={onClose} disabled={loading}>Cancelar</button>
@@ -2582,7 +3391,7 @@
     // ============================================================
 
     const RecoveryModal = ({ lostDebt, loan, client, isOpen, onClose, onSuccess }) => {
-        const { addToast, user, recoveryMovements } = useApp();
+        const { addToast, user, recoveryMovements, lossCompensations } = useApp();
         const [amount, setAmount] = useState('');
         const [method, setMethod] = useState('Efectivo');
         const [date, setDate] = useState(formatDateLocal(todayLocal()));
@@ -2592,8 +3401,22 @@
 
         const status = useMemo(() => {
             if (!lostDebt) return null;
+            const singleState = LossCompensationEngine.calculateState(
+                [lostDebt], recoveryMovements || [], lossCompensations || []
+            );
+            const perDebt = singleState.perDebt[0];
+            if (perDebt) {
+                return {
+                    totalRecovered: perDebt.totalRecovered,
+                    recoveredCapital: perDebt.directRecovery,
+                    recoveredInterest: perDebt.interestRecovery,
+                    pendingCapital: perDebt.pending,
+                    isFullyRecovered: perDebt.isFullyRecovered,
+                    recoveryPercentage: perDebt.percentage
+                };
+            }
             return LostDebtEngine.calculateLostDebtStatus(lostDebt, recoveryMovements);
-        }, [lostDebt, recoveryMovements]);
+        }, [lostDebt, recoveryMovements, lossCompensations]);
 
         useEffect(() => {
             if (isOpen && status) {
@@ -2623,7 +3446,7 @@
             try {
                 await initDatabase();
 
-                await db.transaction('rw', db.lostDebts, db.recoveryMovements, db.capitalMovements, db.auditLog, async () => {
+                await db.transaction('rw', db.lostDebts, db.recoveryMovements, db.capitalMovements, db.auditLog, db.lossCompensations, async () => {
                     const recoveryId = await db.recoveryMovements.add({
                         lostDebtId: lostDebt.id,
                         loanId: lostDebt.loanId,
@@ -2639,7 +3462,19 @@
                     });
 
                     const newRecoveredCapital = normalizeMoney((lostDebt.recoveredCapital || 0) + amountValue);
-                    const isFullyRecovered = newRecoveredCapital >= (lostDebt.lostCapital || 0) - 0.01;
+
+                    const allRecoveries = await db.recoveryMovements.where({ userId: user.id }).toArray();
+                    const allCompensations = await db.lossCompensations.where({ userId: user.id }).toArray();
+                    const thisRecoveredDirect = normalizeMoney(
+                        allRecoveries.filter(r => r.lostDebtId === lostDebt.id)
+                            .reduce((s, r) => s + normalizeMoney(r.capitalRecovered || r.amount || 0), 0)
+                    );
+                    const thisInterestComp = normalizeMoney(
+                        allCompensations.filter(c => c.lostDebtId === lostDebt.id)
+                            .reduce((s, c) => s + normalizeMoney(c.amountAppliedToLoss || 0), 0)
+                    );
+                    const totalRecoveredDebt = normalizeMoney(thisRecoveredDirect + thisInterestComp);
+                    const isFullyRecovered = totalRecoveredDebt >= (lostDebt.lostCapital || 0) - 0.01;
 
                     await db.lostDebts.update(lostDebt.id, {
                         recoveredCapital: newRecoveredCapital,
@@ -2665,7 +3500,7 @@
                         entityType: 'lostDebt',
                         entityId: lostDebt.id,
                         action: 'loss_recovery_registered',
-                        description: `Recuperación de ${formatCurrency(amountValue)} registrada`,
+                        description: `Recuperación directa de ${formatCurrency(amountValue)} registrada`,
                         before: JSON.stringify({ recoveredCapital: lostDebt.recoveredCapital }),
                         after: JSON.stringify({ recoveredCapital: newRecoveredCapital }),
                         details: JSON.stringify({ amount: amountValue, method, date, fullyRecovered: isFullyRecovered })
@@ -2711,9 +3546,15 @@
                             <span style={{ fontWeight: '600' }}>{formatCurrency(lostDebt.lostCapital)}</span>
                         </div>
                         <div className="financial-detail-row">
-                            <span style={{ color: 'var(--text-muted)' }}>Recuperado hasta ahora</span>
+                            <span style={{ color: 'var(--text-muted)' }}>Recuperación directa</span>
                             <span style={{ color: 'var(--recovery)', fontWeight: '600' }}>
                                 {formatCurrency(status.recoveredCapital)}
+                            </span>
+                        </div>
+                        <div className="financial-detail-row">
+                            <span style={{ color: 'var(--text-muted)' }}>Recuperación vía intereses</span>
+                            <span style={{ color: 'var(--accent-light)', fontWeight: '600' }}>
+                                {formatCurrency(status.recoveredInterest || 0)}
                             </span>
                         </div>
                         <div className="financial-detail-row total">
@@ -2727,13 +3568,16 @@
                     <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                         <div>
                             <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                                Valor a recuperar *
+                                Valor a recuperar directamente *
                             </label>
                             <input type="number" value={amount}
                                 onChange={(e) => { setAmount(e.target.value); setError(''); }}
                                 className={`glass-input ${error ? 'error' : ''}`}
                                 placeholder={`Máximo: ${formatCurrency(status.pendingCapital)}`}
                                 max={status.pendingCapital} min="0" step="100" required autoFocus />
+                            <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                                Este dinero NO se cuenta como interés nuevo.
+                            </div>
                         </div>
 
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
@@ -2788,26 +3632,35 @@
     // ============================================================
 
     const LostDebtsPage = ({ onNavigate }) => {
-        const { lostDebts, recoveryMovements, loans, clients, loading, refreshKey } = useApp();
+        const { lostDebts, recoveryMovements, lossCompensations, loans, clients, loading, refreshKey } = useApp();
         const [filter, setFilter] = useState('all');
         const [recoveryTarget, setRecoveryTarget] = useState(null);
         const [search, setSearch] = useState('');
+        const [showHistory, setShowHistory] = useState(false);
 
         const enrichedDebts = useMemo(() => {
-            return lostDebts.map(ld => {
+            const globalState = LossCompensationEngine.calculateState(lostDebts, recoveryMovements, lossCompensations);
+            return globalState.perDebt.map(ld => {
                 const loan = loans.find(l => l.id === ld.loanId);
                 const client = clients.find(c => c.id === ld.clientId);
-                const status = LostDebtEngine.calculateLostDebtStatus(ld, recoveryMovements);
+                const status = {
+                    totalRecovered: ld.totalRecovered,
+                    recoveredCapital: ld.directRecovery,
+                    recoveredInterest: ld.interestRecovery,
+                    pendingCapital: ld.pending,
+                    isFullyRecovered: ld.isFullyRecovered,
+                    recoveryPercentage: ld.percentage
+                };
                 return { ...ld, _loan: loan, _client: client, _status: status };
             });
-        }, [lostDebts, loans, clients, recoveryMovements, refreshKey]);
+        }, [lostDebts, loans, clients, recoveryMovements, lossCompensations, refreshKey]);
 
         const filtered = useMemo(() => {
             let result = [...enrichedDebts];
             
             if (filter === 'pending') result = result.filter(d => !d._status.isFullyRecovered);
             else if (filter === 'recovered') result = result.filter(d => d._status.isFullyRecovered);
-            else if (filter === 'partial') result = result.filter(d => d._status.recoveredCapital > 0 && !d._status.isFullyRecovered);
+            else if (filter === 'partial') result = result.filter(d => d._status.totalRecovered > 0 && !d._status.isFullyRecovered);
             
             if (search.trim()) {
                 const term = search.toLowerCase().trim();
@@ -2827,14 +3680,28 @@
         }, [enrichedDebts, filter, search]);
 
         const totals = useMemo(() => {
-            let totalLost = 0, totalRecovered = 0, totalPending = 0;
+            let totalLost = 0, totalDirect = 0, totalInterestComp = 0, totalPending = 0;
             for (const d of enrichedDebts) {
                 totalLost += normalizeMoney(d.lostCapital || 0);
-                totalRecovered += normalizeMoney(d._status.recoveredCapital || 0);
+                totalDirect += normalizeMoney(d._status.recoveredCapital || 0);
+                totalInterestComp += normalizeMoney(d._status.recoveredInterest || 0);
                 totalPending += normalizeMoney(d._status.pendingCapital || 0);
             }
-            return { totalLost: normalizeMoney(totalLost), totalRecovered: normalizeMoney(totalRecovered), totalPending: normalizeMoney(totalPending) };
+            return {
+                totalLost: normalizeMoney(totalLost),
+                totalDirect: normalizeMoney(totalDirect),
+                totalInterestComp: normalizeMoney(totalInterestComp),
+                totalRecovered: normalizeMoney(totalDirect + totalInterestComp),
+                totalPending: normalizeMoney(totalPending)
+            };
         }, [enrichedDebts, refreshKey]);
+
+        const compensationHistory = useMemo(() => {
+            if (!showHistory) return [];
+            return [...lossCompensations].sort((a, b) =>
+                new Date(b.appliedAt || b.createdAt) - new Date(a.appliedAt || a.createdAt)
+            );
+        }, [lossCompensations, showHistory]);
 
         if (loading) return <div style={{ padding: '20px' }}>{[1, 2, 3].map(i => <SkeletonCard key={i} />)}</div>;
 
@@ -2854,7 +3721,7 @@
                     </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '14px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '8px' }}>
                     <div className="glass-card disabled" style={{ padding: '14px', textAlign: 'center' }}>
                         <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Capital perdido</div>
                         <AnimatedNumber value={totals.totalLost}
@@ -2871,6 +3738,73 @@
                             style={{ fontSize: '16px', fontWeight: '700', color: 'var(--warning)', display: 'block' }} />
                     </div>
                 </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '14px' }}>
+                    <div className="glass-card disabled" style={{ padding: '10px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>↳ Recuperación directa</div>
+                        <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--recovery)' }}>
+                            {formatCurrency(totals.totalDirect)}
+                        </div>
+                    </div>
+                    <div className="glass-card disabled" style={{ padding: '10px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>↳ Vía intereses</div>
+                        <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--accent-light)' }}>
+                            {formatCurrency(totals.totalInterestComp)}
+                        </div>
+                    </div>
+                </div>
+
+                <button className="btn btn-ghost btn-sm"
+                    style={{ width: '100%', marginBottom: '14px' }}
+                    onClick={() => setShowHistory(!showHistory)}>
+                    <IconSVG.History /> {showHistory ? 'Ocultar historial de compensaciones' : 'Ver historial de compensaciones'}
+                </button>
+
+                {showHistory && (
+                    <div style={{ marginBottom: '14px' }}>
+                        {compensationHistory.length === 0 ? (
+                            <div style={{
+                                padding: '16px', textAlign: 'center',
+                                background: 'rgba(255,255,255,0.02)',
+                                borderRadius: 'var(--radius-md)',
+                                fontSize: '12px', color: 'var(--text-muted)'
+                            }}>
+                                Aún no hay compensaciones por intereses registradas.
+                            </div>
+                        ) : (
+                            compensationHistory.slice(0, 30).map(c => {
+                                const client = clients.find(cl => cl.id === c.clientId);
+                                return (
+                                    <div key={c.id} style={{
+                                        padding: '10px 12px',
+                                        background: 'rgba(99,102,241,0.04)',
+                                        borderLeft: '3px solid var(--accent)',
+                                        borderRadius: 'var(--radius-sm)',
+                                        marginBottom: '6px'
+                                    }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                            <div style={{ fontSize: '12px', fontWeight: '600' }}>
+                                                {client?.fullName || 'Cliente'}
+                                            </div>
+                                            <div style={{ fontSize: '12px', fontWeight: '700', color: 'var(--accent-light)' }}>
+                                                {formatCurrency(c.amountAppliedToLoss)}
+                                            </div>
+                                        </div>
+                                        <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                                            {formatDateTime(c.appliedAt || c.createdAt)} · {c.description || 'Compensación'}
+                                        </div>
+                                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                            Pendiente: <span style={{ color: 'var(--warning)' }}>{formatCurrency(c.pendingBefore)}</span>
+                                            {' → '}
+                                            <span style={{ color: c.pendingAfter <= 0.01 ? 'var(--recovery)' : 'var(--text-primary)' }}>
+                                                {formatCurrency(c.pendingAfter)}
+                                            </span>
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
+                )}
 
                 <div style={{ display: 'flex', gap: '6px', marginBottom: '14px', overflow: 'auto' }}>
                     {[
@@ -2916,7 +3850,7 @@
                                         </div>
                                         {debt._status.isFullyRecovered ? (
                                             <span className="badge badge-recovery">Recuperada</span>
-                                        ) : debt._status.recoveredCapital > 0 ? (
+                                        ) : debt._status.totalRecovered > 0 ? (
                                             <span className="badge badge-warning">Parcial</span>
                                         ) : (
                                             <span className="badge badge-loss">Perdida</span>
@@ -2945,9 +3879,12 @@
                                         <div className="progress-fill recovery"
                                             style={{ width: `${Math.min(100, debt._status.recoveryPercentage)}%` }} />
                                     </div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                                        <span>Recuperado: <span style={{ color: 'var(--recovery)', fontWeight: '600' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', fontSize: '10px', color: 'var(--text-muted)', marginTop: '6px', gap: '4px' }}>
+                                        <span>Directo: <span style={{ color: 'var(--recovery)', fontWeight: '600' }}>
                                             {formatCurrency(debt._status.recoveredCapital)}
+                                        </span></span>
+                                        <span>Intereses: <span style={{ color: 'var(--accent-light)', fontWeight: '600' }}>
+                                            {formatCurrency(debt._status.recoveredInterest)}
                                         </span></span>
                                         <span>Pendiente: <span style={{ color: 'var(--danger)', fontWeight: '600' }}>
                                             {formatCurrency(debt._status.pendingCapital)}
@@ -2960,7 +3897,7 @@
                                 <button className="btn btn-recovery btn-sm"
                                     style={{ width: '100%' }}
                                     onClick={(e) => { e.stopPropagation(); setRecoveryTarget(debt); }}>
-                                    <IconSVG.Recover /> Registrar recuperación
+                                    <IconSVG.Recover /> Registrar recuperación directa
                                 </button>
                             )}
 
@@ -3000,7 +3937,7 @@
     // ============================================================
 
     const NetProfitDetailModal = ({ isOpen, onClose }) => {
-        const { loans, installments, payments, expenses, lostDebts, recoveryMovements, refreshKey } = useApp();
+        const { payments, expenses, lostDebts, recoveryMovements, lossCompensations, refreshKey } = useApp();
         const [period, setPeriod] = useState('month');
         const [customStart, setCustomStart] = useState(formatDateLocal(todayLocal()));
         const [customEnd, setCustomEnd] = useState(formatDateLocal(todayLocal()));
@@ -3064,28 +4001,41 @@
             });
             const totalRecoveries = normalizeMoney(periodRecoveries.reduce((s, r) => s + (r.amount || 0), 0));
 
-            const totalPendingLoss = normalizeMoney(
-                lostDebts.reduce((s, d) => {
-                    const recovered = normalizeMoney(d.recoveredCapital || 0);
-                    const lost = normalizeMoney(d.lostCapital || 0);
-                    return s + Math.max(0, lost - recovered);
-                }, 0)
+            const periodCompensations = lossCompensations.filter(c => {
+                const d = new Date(c.appliedAt || c.createdAt);
+                return d >= startDate && d <= endDate;
+            });
+            const periodInterestComp = normalizeMoney(
+                periodCompensations.reduce((s, c) => s + normalizeMoney(c.amountAppliedToLoss || 0), 0)
             );
 
+            const lossState = LossCompensationEngine.calculateState(
+                lostDebts, recoveryMovements, lossCompensations
+            );
+            const totalPendingLoss = lossState.totalPending;
+
             const grossProfit = normalizeMoney(collectedInterest + collectedMora);
-            const netProfit = normalizeMoney(grossProfit - totalExpenses - totalPendingLoss);
+            const availableProfit = normalizeMoney(grossProfit - periodInterestComp - totalExpenses);
 
             return {
                 grossProfit,
                 collectedInterest: normalizeMoney(collectedInterest),
                 collectedMora: normalizeMoney(collectedMora),
                 collectedCapital: normalizeMoney(collectedCapital),
-                totalExpenses, totalRecoveries, totalPendingLoss, netProfit,
+                totalExpenses,
+                totalRecoveries,
+                periodInterestComp,
+                totalPendingLoss,
+                totalLostCapital: lossState.totalLostCapital,
+                totalRecoveredGlobal: lossState.totalRecovered,
+                availableProfit,
+                netProfit: availableProfit,
+                compensationsCount: periodCompensations.length,
                 expensesCount: periodExpenses.length,
                 paymentsCount: periodPayments.length,
                 recoveriesCount: periodRecoveries.length
             };
-        }, [isOpen, period, customStart, customEnd, payments, expenses, lostDebts, recoveryMovements, refreshKey]);
+        }, [isOpen, period, customStart, customEnd, payments, expenses, lostDebts, recoveryMovements, lossCompensations, refreshKey]);
 
         if (!isOpen || !metrics) return null;
 
@@ -3144,7 +4094,7 @@
                         padding: '20px', marginBottom: '14px'
                     }}>
                         <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--accent-light)', marginBottom: '14px' }}>
-                            Utilidad neta del período
+                            Utilidad disponible del período
                         </div>
 
                         <div className="financial-detail-row">
@@ -3166,6 +4116,20 @@
 
                         <div className="financial-detail-row">
                             <div>
+                                <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>− Intereses aplicados a recuperar pérdidas</div>
+                                <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                                    {metrics.compensationsCount} compensación(es) en el período
+                                </div>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                                <div style={{ fontSize: '15px', fontWeight: '700', color: 'var(--accent-light)' }}>
+                                    −{formatCurrency(metrics.periodInterestComp)}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="financial-detail-row">
+                            <div>
                                 <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>− Gastos</div>
                                 <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
                                     {metrics.expensesCount} gastos registrados
@@ -3178,27 +4142,30 @@
                             </div>
                         </div>
 
-                        <div className="financial-detail-row">
-                            <div>
-                                <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>− Pérdidas de capital pendientes</div>
-                                <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                                    Capital perdido aún no recuperado
-                                </div>
-                            </div>
-                            <div style={{ textAlign: 'right' }}>
-                                <div style={{ fontSize: '15px', fontWeight: '700', color: 'var(--loss)' }}>
-                                    −{formatCurrency(metrics.totalPendingLoss)}
-                                </div>
+                        <div className="financial-detail-row total">
+                            <div style={{ color: 'var(--text-secondary)' }}>= Utilidad disponible</div>
+                            <div style={{
+                                color: metrics.availableProfit >= 0 ? 'var(--success)' : 'var(--danger)',
+                                fontSize: '20px'
+                            }}>
+                                {formatCurrency(metrics.availableProfit)}
                             </div>
                         </div>
 
-                        <div className="financial-detail-row total">
-                            <div style={{ color: 'var(--text-secondary)' }}>= Utilidad neta real</div>
-                            <div style={{
-                                color: metrics.netProfit >= 0 ? 'var(--success)' : 'var(--danger)',
-                                fontSize: '20px'
-                            }}>
-                                {formatCurrency(metrics.netProfit)}
+                        <div style={{
+                            marginTop: '12px', padding: '12px',
+                            background: 'rgba(220,38,38,0.05)',
+                            border: '1px solid rgba(220,38,38,0.15)',
+                            borderRadius: 'var(--radius-sm)'
+                        }}>
+                            <div className="financial-detail-row" style={{ borderBottom: 'none', padding: '4px 0' }}>
+                                <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Pérdida pendiente global</span>
+                                <span style={{
+                                    fontWeight: '700',
+                                    color: metrics.totalPendingLoss > 0 ? 'var(--danger)' : 'var(--recovery)'
+                                }}>
+                                    {formatCurrency(metrics.totalPendingLoss)}
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -3211,13 +4178,12 @@
                         fontSize: '11px', color: 'var(--text-secondary)', lineHeight: '1.6'
                     }}>
                         <div style={{ fontWeight: '600', color: 'var(--accent-light)', marginBottom: '4px' }}>
-                            Nota importante
+                            Cómo se calcula
                         </div>
                         <div>
-                            La utilidad neta considera las ganancias reales del período, menos los gastos,
-                            menos el capital que aún está pendiente de recuperar por pérdidas.
-                            Las recuperaciones de pérdidas NO se cuentan como nuevas ganancias porque
-                            son devolución de capital previamente perdido.
+                            Utilidad disponible = Ganancias generadas − Intereses aplicados a recuperar pérdidas − Gastos.
+                            Mientras exista pérdida pendiente, los intereses primero compensan esa pérdida.
+                            Las recuperaciones directas de pérdidas NO se cuentan como ganancia nueva.
                         </div>
                     </div>
 
@@ -3228,15 +4194,6 @@
             </div>
         );
     };
-
-    // ============================================================
-    // FIN PARTE 2/3 — CONTINÚA PARTE 3/3
-    // ============================================================
-    // ============================================================
-    // LOANS W v10.1 - CON CORRECCIONES APLICADAS
-    // PARTE 3/3 - COMPONENTES PRINCIPALES Y APP
-    // ============================================================
-
     // ============================================================
     // 18. COMPONENT: LOGIN SCREEN
     // ============================================================
@@ -3403,19 +4360,17 @@
 
     // ============================================================
     // 19. COMPONENT: DASHBOARD PAGE
-    // CORRECCIÓN: Barra de progreso restaurada con validaciones
     // ============================================================
 
     const DashboardPage = ({ onNavigate }) => {
         const { 
             loans, installments, payments, expenses, capitalMovements, 
-            clients, lostDebts, recoveryMovements, loading, refreshKey 
+            clients, lostDebts, recoveryMovements, lossCompensations, loading, refreshKey 
         } = useApp();
         const now = new Date();
         const currentYear = now.getUTCFullYear();
         const currentMonth = now.getUTCMonth() + 1;
 
-        // Sanear arrays antes de usarlos
         const safeLoans = useMemo(() => Array.isArray(loans) ? loans.filter(l => l && typeof l === 'object') : [], [loans]);
         const safeInstallments = useMemo(() => Array.isArray(installments) ? installments.filter(i => i && typeof i === 'object') : [], [installments]);
         const safePayments = useMemo(() => Array.isArray(payments) ? payments.filter(p => p && typeof p === 'object') : [], [payments]);
@@ -3423,14 +4378,12 @@
         const safeCapitalMovements = useMemo(() => Array.isArray(capitalMovements) ? capitalMovements.filter(m => m && typeof m === 'object') : [], [capitalMovements]);
         const safeLostDebts = useMemo(() => Array.isArray(lostDebts) ? lostDebts.filter(d => d && typeof d === 'object') : [], [lostDebts]);
 
-        // Resumen del mes actual (para la barra de progreso)
         const currentPeriodSummary = useMemo(() => {
             return CollectionHistoryEngine.getPeriodSummary(
                 safePayments, safeInstallments, safeLoans, clients || [], currentYear, currentMonth
             );
         }, [safePayments, safeInstallments, safeLoans, clients, currentYear, currentMonth, refreshKey]);
 
-        // Métricas generales
         const metrics = useMemo(() => {
             const activeLoans = safeLoans.filter(l => l.status === 'active' || l.status === 'overdue');
 
@@ -3453,7 +4406,6 @@
             const totalLent = normalizeMoney(activeLoans.reduce((s, l) => s + (Number(l?.principal) || 0), 0));
             const availableCapital = normalizeMoney(totalCapital - totalLent);
 
-            // Por recuperar (préstamos activos)
             let porRecuperar = 0;
             for (const loan of activeLoans) {
                 const loanInsts = safeInstallments.filter(i => i.loanId === loan.id && i.status !== 'paid' && i.status !== 'cancelled');
@@ -3463,7 +4415,6 @@
             }
             porRecuperar = normalizeMoney(porRecuperar);
 
-            // Ganancias del mes
             const monthPayments = safePayments.filter(p => {
                 if (!p.paymentDate) return false;
                 const d = new Date(p.paymentDate);
@@ -3485,18 +4436,34 @@
             });
             const totalExpenses = normalizeMoney(monthExpenses.reduce((s, e) => s + (e.amount || 0), 0));
 
-            const totalLostCapital = normalizeMoney(safeLostDebts.reduce((s, d) => s + (d.lostCapital || 0), 0));
-            const totalRecoveredCapital = normalizeMoney(safeLostDebts.reduce((s, d) => s + (d.recoveredCapital || 0), 0));
-            const totalPendingLost = normalizeMoney(Math.max(0, totalLostCapital - totalRecoveredCapital));
+            const lossState = LossCompensationEngine.calculateState(
+                safeLostDebts, recoveryMovements || [], lossCompensations || []
+            );
+            const totalLostCapital = lossState.totalLostCapital;
+            const totalRecoveredCapital = lossState.totalRecovered;
+            const totalPendingLost = lossState.totalPending;
 
-            const netProfit = normalizeMoney(grossProfit - totalExpenses - totalPendingLost);
+            const monthCompensations = (lossCompensations || []).filter(c => {
+                const d = new Date(c.appliedAt || c.createdAt);
+                return d.getUTCMonth() === currentMonth - 1 && d.getUTCFullYear() === currentYear;
+            });
+            const monthInterestComp = normalizeMoney(
+                monthCompensations.reduce((s, c) => s + normalizeMoney(c.amountAppliedToLoss || 0), 0)
+            );
+
+            const availableProfit = normalizeMoney(grossProfit - monthInterestComp - totalExpenses);
+            const netProfit = normalizeMoney(availableProfit);
 
             return {
                 totalCapital, availableCapital, porRecuperar, collectedAmount, grossProfit,
-                totalExpenses, netProfit, totalLostCapital, totalRecoveredCapital, totalPendingLost,
+                totalExpenses,
+                monthInterestComp,
+                availableProfit,
+                netProfit,
+                totalLostCapital, totalRecoveredCapital, totalPendingLost,
                 lostDebtsCount: safeLostDebts.length
             };
-        }, [safeLoans, safeInstallments, safePayments, safeCapitalMovements, safeExpenses, safeLostDebts, currentYear, currentMonth, refreshKey]);
+        }, [safeLoans, safeInstallments, safePayments, safeCapitalMovements, safeExpenses, safeLostDebts, recoveryMovements, lossCompensations, currentYear, currentMonth, refreshKey]);
 
         const today = todayLocal();
         const dueToday = useMemo(() => safeInstallments.filter(i => {
@@ -3545,7 +4512,6 @@
                     </div>
                 </div>
 
-                {/* Resumen financiero */}
                 <div style={{ marginBottom: '14px' }}>
                     <div style={{
                         fontSize: '11px', fontWeight: '600',
@@ -3597,11 +4563,23 @@
                                 }} />
                         </div>
                     </div>
+                    {metrics.monthInterestComp > 0 && (
+                        <div style={{
+                            marginTop: '8px', padding: '10px 12px',
+                            background: 'rgba(99,102,241,0.06)',
+                            border: '1px solid rgba(99,102,241,0.15)',
+                            borderRadius: 'var(--radius-sm)',
+                            fontSize: '11px', color: 'var(--text-secondary)',
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                        }}>
+                            <span>Intereses aplicados a pérdidas este mes</span>
+                            <span style={{ fontWeight: '700', color: 'var(--accent-light)' }}>
+                                {formatCurrency(metrics.monthInterestComp)}
+                            </span>
+                        </div>
+                    )}
                 </div>
 
-                {/* ============================================ */}
-                {/* BARRA DE PROGRESO - RESTAURADA */}
-                {/* ============================================ */}
                 <div className="glass-card" style={{ padding: '16px', marginBottom: '14px' }} onClick={() => onNavigate('collections')}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                         <span style={{
@@ -3649,7 +4627,6 @@
                     )}
                 </div>
 
-                {/* Pérdidas (si existen) */}
                 {metrics.lostDebtsCount > 0 && (
                     <div className="glass-card" style={{ padding: '14px', marginBottom: '14px' }}
                         onClick={() => onNavigate('lostDebts')}>
@@ -3683,7 +4660,6 @@
                     </div>
                 )}
 
-                {/* Alertas */}
                 {alerts.length > 0 && (
                     <div style={{ marginBottom: '14px' }}>
                         <div className="flex-center gap-1 mb-2">
@@ -3711,7 +4687,6 @@
                     </div>
                 )}
 
-                {/* Pagos recientes */}
                 {recentPayments.length > 0 && (
                     <div style={{ marginBottom: '14px' }}>
                         <div className="flex-center gap-1 mb-2">
@@ -3747,7 +4722,6 @@
                     </div>
                 )}
 
-                {/* Próximos cobros */}
                 {safeInstallments.length > 0 && (
                     <div style={{ marginBottom: '14px' }}>
                         <div className="flex-center gap-1 mb-2" style={{ justifyContent: 'space-between' }}>
@@ -3799,7 +4773,6 @@
 
     // ============================================================
     // 20. COMPONENT: CLIENTS PAGE
-    // CORRECCIÓN: Inicial segura con getSafeInitial()
     // ============================================================
 
     const ClientsPage = ({ onNavigate }) => {
@@ -3926,7 +4899,6 @@
 
     // ============================================================
     // 21. COMPONENT: CLIENT FORM
-    // CORRECCIÓN: Uso de getSafeString para inicializar campos
     // ============================================================
 
     const ClientForm = ({ initial, onSave }) => {
@@ -4007,7 +4979,6 @@
 
     // ============================================================
     // 22. COMPONENT: CLIENT DETAIL PAGE
-    // CORRECCIÓN: Validaciones defensivas para evitar pantalla negra
     // ============================================================
 
     const ClientDetailPage = ({ id, onNavigate }) => {
@@ -4015,7 +4986,6 @@
         const [showEdit, setShowEdit] = useState(false);
         const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-        // Buscar cliente con validación
         const client = (clients || []).find(c => c && c.id === parseInt(id));
         
         if (!client) {
@@ -4035,7 +5005,6 @@
             );
         }
 
-        // Extraer valores seguros
         const safeClient = {
             id: client.id,
             fullName: getSafeString(client.fullName, 'Sin nombre'),
@@ -4051,7 +5020,6 @@
             notes: getSafeString(client.notes)
         };
 
-        // Filtrar préstamos con validación
         const cl = Array.isArray(loans) ? loans.filter(l => l && l.clientId === safeClient.id) : [];
         
         const tl = normalizeMoney(cl.reduce((s, l) => s + (Number(l?.principal) || 0), 0));
@@ -4749,10 +5717,12 @@
     // ============================================================
 
     const LoanDetailPage = ({ id, onNavigate }) => {
-        const { loans, clients, installments, payments, lostDebts, recoveryMovements, refreshAllData, addToast, user } = useApp();
+        const { loans, clients, installments, payments, lostDebts, recoveryMovements, lossCompensations, refreshAllData, addToast, user } = useApp();
         const loan = (loans || []).find(l => l && l.id === parseInt(id));
 
-        const [showPaymentModal, setShowPaymentModal] = useState(false);
+        const [showCobrarModal, setShowCobrarModal] = useState(false);
+        const [showAbonarModal, setShowAbonarModal] = useState(false);
+        const [showEditAbonarModal, setShowEditAbonarModal] = useState(false);
         const [showLostDebtModal, setShowLostDebtModal] = useState(false);
         const [showRecoveryModal, setShowRecoveryModal] = useState(false);
         const [selectedInstallment, setSelectedInstallment] = useState(null);
@@ -4772,7 +5742,70 @@
         const isLost = loan.status === 'lost';
 
         const lostDebt = (lostDebts || []).find(d => d.loanId === loan.id);
-        const lostDebtStatus = lostDebt ? LostDebtEngine.calculateLostDebtStatus(lostDebt, recoveryMovements || []) : null;
+
+        const lostDebtStatus = useMemo(() => {
+            if (!lostDebt) return null;
+            const state = LossCompensationEngine.calculateState(
+                [lostDebt], recoveryMovements || [], lossCompensations || []
+            );
+            const pd = state.perDebt[0];
+            if (!pd) return LostDebtEngine.calculateLostDebtStatus(lostDebt, recoveryMovements);
+            return {
+                totalRecovered: pd.totalRecovered,
+                recoveredCapital: pd.directRecovery,
+                recoveredInterest: pd.interestRecovery,
+                pendingCapital: pd.pending,
+                pendingExpectedProfit: normalizeMoney(Math.max(0, (lostDebt.lostExpectedProfit || 0) - pd.interestRecovery)),
+                isFullyRecovered: pd.isFullyRecovered,
+                recoveryPercentage: pd.percentage
+            };
+        }, [lostDebt, recoveryMovements, lossCompensations]);
+
+        const openCobrarModal = (installment) => {
+            setSelectedInstallment(installment);
+            setEditingPayment(null);
+            setShowCobrarModal(true);
+        };
+
+        const openAbonarModal = (installment) => {
+            setSelectedInstallment(installment);
+            setEditingPayment(null);
+            setShowAbonarModal(true);
+        };
+
+        const openEditPayment = (payment) => {
+            setEditingPayment(payment);
+            setSelectedInstallment(installments.find(i => i.id === payment.installmentId));
+            setShowEditAbonarModal(true);
+        };
+
+        const closeCobrarModal = () => {
+            setShowCobrarModal(false);
+            setSelectedInstallment(null);
+        };
+
+        const closeAbonarModal = () => {
+            setShowAbonarModal(false);
+            setSelectedInstallment(null);
+        };
+
+        const closeEditAbonarModal = () => {
+            setShowEditAbonarModal(false);
+            setEditingPayment(null);
+            setSelectedInstallment(null);
+        };
+
+        const handleCobroSuccess = () => {
+            setShowCobrarModal(false);
+            setSelectedInstallment(null);
+            refreshAllData();
+        };
+
+        const handleAbonoSuccess = () => {
+            setShowAbonarModal(false);
+            setSelectedInstallment(null);
+            refreshAllData();
+        };
 
         const handleMarkAsLost = async (breakdown) => {
             try {
@@ -4834,7 +5867,7 @@
                 const loanInsts = await db.installments.where({ loanId: loan.id }).toArray();
                 const instIds = loanInsts.map(i => i.id);
 
-                await db.transaction('rw', db.loans, db.installments, db.payments, db.capitalMovements, db.auditLog, db.lostDebts, db.recoveryMovements, async () => {
+                await db.transaction('rw', db.loans, db.installments, db.payments, db.capitalMovements, db.auditLog, db.lostDebts, db.recoveryMovements, db.lossCompensations, async () => {
                     if (instIds.length > 0) {
                         await db.payments.where('installmentId').anyOf(instIds).delete();
                     }
@@ -4847,6 +5880,7 @@
                     if (paymentMovements.length > 0) {
                         await db.capitalMovements.bulkDelete(paymentMovements.map(m => m.id));
                     }
+                    await db.lossCompensations.where({ loanId: loan.id }).delete();
                     await db.recoveryMovements.where({ loanId: loan.id }).delete();
                     const recoveryMovs = await db.capitalMovements
                         .where({ referenceType: 'lostDebt' })
@@ -4872,31 +5906,6 @@
             }
             setDeleting(false);
             setShowDeleteConfirm(false);
-        };
-
-        const openPaymentModal = (installment) => {
-            setSelectedInstallment(installment);
-            setEditingPayment(null);
-            setShowPaymentModal(true);
-        };
-
-        const openEditPayment = (payment) => {
-            setEditingPayment(payment);
-            setSelectedInstallment(installments.find(i => i.id === payment.installmentId));
-            setShowPaymentModal(true);
-        };
-
-        const handlePaymentSuccess = () => {
-            setShowPaymentModal(false);
-            setSelectedInstallment(null);
-            setEditingPayment(null);
-            refreshAllData();
-        };
-
-        const handlePaymentClose = () => {
-            setShowPaymentModal(false);
-            setSelectedInstallment(null);
-            setEditingPayment(null);
         };
 
         return (
@@ -5050,9 +6059,15 @@
                         <hr style={{ border: 'none', borderTop: '1px dashed var(--glass-border)', margin: '12px 0' }} />
 
                         <div className="financial-detail-row">
-                            <span style={{ color: 'var(--text-muted)' }}>Recuperado</span>
+                            <span style={{ color: 'var(--text-muted)' }}>Recuperación directa</span>
                             <span style={{ fontWeight: '600', color: 'var(--recovery)' }}>
                                 {formatCurrency(lostDebtStatus.recoveredCapital)}
+                            </span>
+                        </div>
+                        <div className="financial-detail-row">
+                            <span style={{ color: 'var(--text-muted)' }}>Recuperación vía intereses</span>
+                            <span style={{ fontWeight: '600', color: 'var(--accent-light)' }}>
+                                {formatCurrency(lostDebtStatus.recoveredInterest)}
                             </span>
                         </div>
                         <div className="financial-detail-row total">
@@ -5085,13 +6100,6 @@
                     <>
                         <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '10px' }}>
                             Plan de pagos
-                            <button className="btn btn-success btn-sm" style={{ marginLeft: '8px' }}
-                                onClick={() => {
-                                    const pending = insts.find(i => i.status !== 'paid' && i.status !== 'cancelled');
-                                    if (pending) openPaymentModal(pending);
-                                }}>
-                                <IconSVG.Check /> Registrar abono
-                            </button>
                         </div>
 
                         {insts.map(inst => {
@@ -5124,11 +6132,12 @@
                                             isDueToday ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.05)',
                                         color: ipa ? 'var(--success)' : io ? 'var(--danger)' :
                                             ipart ? 'var(--accent-light)' :
-                                            isDueToday ? 'var(--warning)' : 'var(--text-primary)'
+                                            isDueToday ? 'var(--warning)' : 'var(--text-primary)',
+                                        flexShrink: 0
                                     }}>
                                         {ipa ? <IconSVG.Check /> : io ? '!' : ipart ? '◐' : inst.number}
                                     </div>
-                                    <div style={{ flex: 1 }}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
                                         <div style={{ fontSize: '13px', fontWeight: '500' }}>Cuota {inst.number}</div>
                                         <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                                             Vence: {formatDate(inst.dueDate)}
@@ -5140,15 +6149,25 @@
                                             </span>}
                                         </div>
                                     </div>
-                                    <div style={{ textAlign: 'right' }}>
+                                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
                                         <div style={{ fontSize: '14px', fontWeight: '600' }}>
                                             {ipa ? formatCurrency(inst.totalAmount) : formatCurrency(twm)}
                                         </div>
                                     </div>
                                     {!ipa && inst.status !== 'cancelled' && (
-                                        <button className="btn btn-success btn-sm" onClick={() => openPaymentModal(inst)}>
-                                            <IconSVG.Check /> Cobrar
-                                        </button>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flexShrink: 0 }}>
+                                            <button className="btn btn-success btn-sm" onClick={() => openCobrarModal(inst)}
+                                                style={{ padding: '6px 12px', fontSize: '11px', minHeight: 'auto' }}>
+                                                <IconSVG.Check /> Cobrar
+                                            </button>
+                                            <button className="btn btn-ghost btn-sm" onClick={() => openAbonarModal(inst)}
+                                                style={{
+                                                    padding: '6px 12px', fontSize: '11px', minHeight: 'auto',
+                                                    borderColor: 'var(--accent)', color: 'var(--accent-light)'
+                                                }}>
+                                                Abonar
+                                            </button>
+                                        </div>
                                     )}
                                 </div>
                             );
@@ -5173,15 +6192,37 @@
                     </div>
                 )}
 
-                <PaymentModal
-                    isOpen={showPaymentModal}
-                    onClose={handlePaymentClose}
+                <CobrarModal
+                    isOpen={showCobrarModal}
+                    onClose={closeCobrarModal}
+                    installment={selectedInstallment}
+                    loan={loan}
+                    client={client}
+                    user={user}
+                    onSuccess={handleCobroSuccess}
+                    onError={(err) => addToast('Error: ' + err.message, 'error')}
+                />
+
+                <AbonarModal
+                    isOpen={showAbonarModal}
+                    onClose={closeAbonarModal}
+                    installment={selectedInstallment}
+                    loan={loan}
+                    client={client}
+                    user={user}
+                    onSuccess={handleAbonoSuccess}
+                    onError={(err) => addToast('Error: ' + err.message, 'error')}
+                />
+
+                <AbonarModal
+                    isOpen={showEditAbonarModal}
+                    onClose={closeEditAbonarModal}
                     installment={selectedInstallment}
                     loan={loan}
                     client={client}
                     user={user}
                     existingPayment={editingPayment}
-                    onSuccess={handlePaymentSuccess}
+                    onSuccess={() => { closeEditAbonarModal(); refreshAllData(); }}
                     onError={(err) => addToast('Error: ' + err.message, 'error')}
                 />
 
@@ -5266,7 +6307,7 @@
     // ============================================================
 
     const CollectionsPage = ({ onNavigate }) => {
-        const { loans, clients, installments, payments, refreshKey } = useApp();
+        const { loans, clients, installments } = useApp();
         const [filter, setFilter] = useState('all');
         const today = todayLocal();
 
@@ -5360,7 +6401,7 @@
     // ============================================================
 
     const FinancePage = ({ onNavigate }) => {
-        const { installments, payments, loans, expenses, capitalMovements, lostDebts, recoveryMovements, refreshKey } = useApp();
+        const { installments, payments, loans, expenses, capitalMovements, lostDebts, recoveryMovements, lossCompensations, refreshKey } = useApp();
         const [showNetProfitDetail, setShowNetProfitDetail] = useState(false);
         const now = new Date();
         const currentYear = now.getUTCFullYear();
@@ -5395,9 +6436,12 @@
             const totalLent = normalizeMoney(activeLoans.reduce((s, l) => s + (Number(l?.principal) || 0), 0));
             const availableCapital = normalizeMoney(totalCapital - totalLent);
 
-            const totalLostCapital = normalizeMoney(safeLostDebts.reduce((s, d) => s + (d.lostCapital || 0), 0));
-            const totalRecoveredCapital = normalizeMoney(safeLostDebts.reduce((s, d) => s + (d.recoveredCapital || 0), 0));
-            const totalPendingLost = normalizeMoney(Math.max(0, totalLostCapital - totalRecoveredCapital));
+            const lossState = LossCompensationEngine.calculateState(
+                safeLostDebts, recoveryMovements || [], lossCompensations || []
+            );
+            const totalLostCapital = lossState.totalLostCapital;
+            const totalRecoveredCapital = lossState.totalRecovered;
+            const totalPendingLost = lossState.totalPending;
 
             const monthPayments = safePayments.filter(p => {
                 if (!p.paymentDate) return false;
@@ -5428,7 +6472,16 @@
             });
             const expectedAmount = normalizeMoney(monthInstallments.reduce((s, i) => s + (i.totalAmount || 0), 0));
 
-            const netProfit = normalizeMoney(collectedProfit - totalExpenses - totalPendingLost);
+            const monthCompensations = (lossCompensations || []).filter(c => {
+                const d = new Date(c.appliedAt || c.createdAt);
+                return d.getUTCMonth() === currentMonth - 1 && d.getUTCFullYear() === currentYear;
+            });
+            const monthInterestComp = normalizeMoney(
+                monthCompensations.reduce((s, c) => s + normalizeMoney(c.amountAppliedToLoss || 0), 0)
+            );
+
+            const availableProfit = normalizeMoney(collectedProfit - monthInterestComp - totalExpenses);
+            const netProfit = normalizeMoney(availableProfit);
 
             return {
                 totalCapital, totalLent, availableCapital,
@@ -5439,13 +6492,15 @@
                 collectedProfit,
                 expectedAmount, totalExpenses,
                 totalLostCapital, totalRecoveredCapital, totalPendingLost,
+                monthInterestComp,
+                availableProfit,
                 netProfit,
                 pending: normalizeMoney(expectedAmount - collectedAmount),
                 compliance: expectedAmount > 0 ? normalizeMoney((collectedAmount / expectedAmount) * 100) : 0,
                 lostDebtsCount: safeLostDebts.length,
                 activeLoansCount: activeLoans.length
             };
-        }, [loans, installments, payments, capitalMovements, expenses, lostDebts, recoveryMovements, currentYear, currentMonth, refreshKey]);
+        }, [loans, installments, payments, capitalMovements, expenses, lostDebts, recoveryMovements, lossCompensations, currentYear, currentMonth, refreshKey]);
 
         const porRecuperar = useMemo(() => {
             const safeLoans = Array.isArray(loans) ? loans.filter(l => l && typeof l === 'object') : [];
@@ -5492,11 +6547,11 @@
                     </div>
                     <div className="glass-card" style={{ padding: '14px', textAlign: 'center' }}
                         onClick={() => setShowNetProfitDetail(true)}>
-                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Utilidad neta</div>
-                        <AnimatedNumber value={metrics.netProfit}
+                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Utilidad disponible</div>
+                        <AnimatedNumber value={metrics.availableProfit}
                             style={{
                                 fontSize: '18px', fontWeight: '700',
-                                color: metrics.netProfit >= 0 ? 'var(--success)' : 'var(--danger)',
+                                color: metrics.availableProfit >= 0 ? 'var(--success)' : 'var(--danger)',
                                 display: 'block'
                             }} />
                         <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '2px' }}>
@@ -5594,6 +6649,22 @@
                         <span style={{ color: 'var(--text-secondary)' }}>Total ganancia</span>
                         <span style={{ color: 'var(--success)' }}>{formatCurrency(metrics.collectedProfit)}</span>
                     </div>
+                    {metrics.monthInterestComp > 0 && (
+                        <>
+                            <div className="financial-detail-row">
+                                <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>→ Aplicado a pérdidas</span>
+                                <span style={{ fontWeight: '600', color: 'var(--accent-light)' }}>
+                                    −{formatCurrency(metrics.monthInterestComp)}
+                                </span>
+                            </div>
+                            <div className="financial-detail-row">
+                                <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>→ Utilidad disponible</span>
+                                <span style={{ fontWeight: '600', color: metrics.availableProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                                    {formatCurrency(metrics.availableProfit)}
+                                </span>
+                            </div>
+                        </>
+                    )}
                 </div>
 
                 <div className="glass-card disabled" style={{ padding: '16px', marginBottom: '12px' }}>
@@ -5913,7 +6984,6 @@
             dueDateType: 'fixed_day', moraType: 'percentage_daily', moraRate: '0.5'
         });
         const [simulation, setSimulation] = useState(null);
-        const { addToast } = useApp();
         const quickAmounts = [100000, 200000, 300000, 500000, 600000, 1000000, 2000000];
         const uf = (f, v) => setForm(p => ({ ...p, [f]: v }));
 
@@ -6537,6 +7607,7 @@
                     notes: await db.notes.where({ userId: user.id }).toArray(),
                     lostDebts: await db.lostDebts.where({ userId: user.id }).toArray(),
                     recoveryMovements: await db.recoveryMovements.where({ userId: user.id }).toArray(),
+                    lossCompensations: await db.lossCompensations.where({ userId: user.id }).toArray(),
                     exportDate: new Date().toISOString()
                 };
                 const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -6700,14 +7771,14 @@
                 </button>
 
                 <div style={{ marginTop: '24px', textAlign: 'center', fontSize: '11px', color: 'var(--text-muted)' }}>
-                    LOANS W v10.1 · Sistema financiero completo
+                    LOANS W v10.4 · Sistema financiero completo
                 </div>
             </div>
         );
     };
 
     // ============================================================
-    // 38. APP PRINCIPAL
+    // 38. APP PRINCIPAL (arranque estabilizado)
     // ============================================================
 
     const App = () => {
@@ -6719,13 +7790,26 @@
         const [notesInitialAction, setNotesInitialAction] = useState(null);
 
         useEffect(() => {
-            initDatabase()
-                .then(() => SecurityUtils.validateSession())
-                .then(u => {
+            let cancelled = false;
+
+            const boot = async () => {
+                try {
+                    console.log('[BOOT] Iniciando Loans W...');
+                    await initDatabase();
+                    console.log('[BOOT] Base de datos lista');
+                    const u = await SecurityUtils.validateSession();
+                    console.log('[BOOT] Sesión validada:', u ? (u.fullName || u.document) : 'sin sesión');
+                    if (cancelled) return;
                     if (u) { setUser(u); setAppState('main'); }
                     else setAppState('login');
-                })
-                .catch(() => setAppState('login'));
+                } catch (err) {
+                    console.error('[BOOT] Error en arranque:', err);
+                    if (!cancelled) setAppState('login');
+                }
+            };
+
+            boot();
+            return () => { cancelled = true; };
         }, []);
 
         const handleLogin = useCallback((u) => {
@@ -6805,14 +7889,15 @@
     ReactDOM.render(<App />, document.getElementById('root'));
 
     console.log('========================================');
-    console.log('LOANS W v10.1 — CORRECCIONES APLICADAS');
+    console.log('LOANS W v10.4 — ARRANQUE ESTABILIZADO');
     console.log('========================================');
-    console.log('✅ Barra de progreso del Dashboard restaurada');
-    console.log('✅ Pantalla negra de clientes corregida');
-    console.log('✅ Validaciones defensivas en nombres y campos');
-    console.log('✅ Compatibilidad con datos antiguos');
-    console.log('✅ Todos los datos existentes se conservan');
-    console.log('========================================');
+    console.log('✅ Cobrar / Abonar separados');
+console.log('✅ Compensación automática de pérdidas con intereses');
+console.log('✅ DB v13 con upgrade explícito (evita migración colgada)');
+console.log('✅ initDatabase con timeout defensivo + reintento');
+console.log('✅ App con try/catch/finally y logs [BOOT]');
+console.log('✅ Los datos existentes se conservan');
+console.log('========================================');
 </script>
 </body>
 </html>
