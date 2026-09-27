@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#060610">
-    <title>LOANS W — Sistema Financiero Completo v10.5</title>
+    <title>LOANS W — Sistema Financiero Completo v10.6</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -376,17 +376,17 @@
 
 <script type="text/babel">
     // ======================================================
-    // LOANS W v10.5 - SISTEMA FINANCIERO COMPLETO
+    // LOANS W v10.6 - SISTEMA FINANCIERO COMPLETO
     // CON COMPENSACIÓN DE PÉRDIDAS VÍA INTERESES
-    // Y ARRANQUE ESTABILIZADO
+    // Y PANTALLA DEDICADA "PROGRESO DE COBROS"
     //
-    // CAMBIO v10.5 (respecto a v10.4):
-    //   - DB version subida a 9999 con MISMO SCHEMA que v13
-    //     → evita VersionError cuando el navegador tiene v14+.
-    //   - initDatabase detecta VersionError y muestra diagnóstico.
-    //   - Botón "Reset de emergencia" en Ajustes (doble confirmación).
-    //   - NO se borra ningún dato existente: el upgrade v13→v9999
-    //     es un no-op porque el schema es idéntico.
+    // NUEVO EN v10.6:
+    //   - getMonthlyProgress en CollectionHistoryEngine
+    //   - Página CollectionProgressPage (solo pagos reales)
+    //   - Ruta 'collectionProgress' + redirect desde dashboard
+    //   - FAB oculto en esa pantalla
+    //   - NO se modificó nada más (login, cobrar, abonar, mora,
+    //     pérdidas, recuperación, gastos, DB, schema, etc.)
     // ============================================================
 
     const { useState, useEffect, useMemo, useCallback, useContext, createContext, useRef } = React;
@@ -950,6 +950,104 @@
             };
         }
 
+        // ═══════════════════════════════════════════════════════════
+        // ▼▼▼ PARCHE 1 — NUEVO MÉTODO getMonthlyProgress ▼▼▼
+        // Basado 100% en pagos reales (paymentDate). No modifica
+        // getPeriodSummary ni getAvailablePeriods. No toca DB.
+        // ═══════════════════════════════════════════════════════════
+        static getMonthlyProgress(payments, installments, loans, clients, year, month) {
+            const monthStart = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
+            const monthEnd = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+
+            // 1) Programado: cuotas cuya dueDate cae en el mes (excluye canceladas)
+            const periodInstallments = (installments || []).filter(i => {
+                if (!i || !i.dueDate) return false;
+                if (i.status === 'cancelled') return false;
+                const d = parseLocalDate(i.dueDate);
+                return d >= monthStart && d <= monthEnd;
+            });
+            const programmedAmount = normalizeMoney(
+                periodInstallments.reduce((s, i) => s + normalizeMoney(i.totalAmount || 0), 0)
+            );
+
+            // 2) Pagos del mes: clasificados por paymentDate real
+            const periodPayments = (payments || []).filter(p => {
+                if (!p || !p.paymentDate) return false;
+                const d = parseLocalDate(p.paymentDate);
+                return d >= monthStart && d <= monthEnd;
+            });
+
+            // 3) Monto real recibido por pago (prioriza payment.amount)
+            const getRealAmount = (p) => {
+                if (typeof p.amount === 'number' && !isNaN(p.amount)) {
+                    return normalizeMoney(p.amount);
+                }
+                const bd = p.breakdown || {};
+                return normalizeMoney((bd.capital || 0) + (bd.interest || 0) + (bd.mora || 0));
+            };
+
+            // 4) Agrupar por cliente (una sola entrada por cliente)
+            const byClient = {};
+            for (const p of periodPayments) {
+                const cid = p.clientId;
+                if (cid === undefined || cid === null) continue;
+                if (!byClient[cid]) {
+                    byClient[cid] = { clientId: cid, totalPaid: 0, payments: [] };
+                }
+                const real = getRealAmount(p);
+                byClient[cid].totalPaid = normalizeMoney(byClient[cid].totalPaid + real);
+                byClient[cid].payments.push({
+                    id: p.id,
+                    amount: real,
+                    date: p.paymentDate,
+                    method: p.method || 'Efectivo',
+                    paymentType: p.paymentType || 'custom',
+                    receiptNumber: p.receiptNumber || '',
+                    breakdown: p.breakdown || { capital: 0, interest: 0, mora: 0 },
+                    loanId: p.loanId,
+                    installmentId: p.installmentId,
+                    note: p.note || ''
+                });
+            }
+
+            // 5) Enriquecer y ordenar por monto desc
+            const clientList = Object.values(byClient).map(c => {
+                const client = (clients || []).find(cl => cl.id === c.clientId);
+                const firstPayment = c.payments[0];
+                const loan = firstPayment
+                    ? (loans || []).find(l => l.id === firstPayment.loanId)
+                    : null;
+                return {
+                    ...c,
+                    clientName: client?.fullName || 'Cliente',
+                    clientDocument: client?.document || '',
+                    loanNumber: loan?.loanNumber || '',
+                    paymentsCount: c.payments.length
+                };
+            }).sort((a, b) => b.totalPaid - a.totalPaid);
+
+            const totalPaid = normalizeMoney(
+                clientList.reduce((s, c) => s + c.totalPaid, 0)
+            );
+            const progress = programmedAmount > 0
+                ? (totalPaid / programmedAmount) * 100
+                : 0;
+
+            return {
+                year,
+                month,
+                monthName: getMonthName(month),
+                programmedAmount,
+                totalPaid,
+                progress,
+                clientsWhoPaid: clientList,
+                totalPaymentsCount: periodPayments.length,
+                totalClientsCount: clientList.length,
+                programmedInstallmentsCount: periodInstallments.length
+            };
+        }
+        // ▲▲▲ FIN PARCHE 1 ▲▲▲
+
         static getAvailablePeriods(payments) {
             const periods = new Set();
             for (const p of payments) {
@@ -1174,22 +1272,11 @@
     // ============================================================
     // 5. DATABASE (v9999 = "current", mismo schema que v13)
     // ============================================================
-    //
-    // Estrategia anti-VersionError:
-    //   - Declaramos v11, v12, v13 (históricas, para migrar BDs viejas)
-    //   - Declaramos v9999 con el MISMO schema que v13
-    //   - Como v9999 > cualquier versión que el usuario pueda tener
-    //     (a menos que ya use esta build), Dexie nunca lanza
-    //     VersionError por intentar abrir con versión menor.
-    //   - El "upgrade" v13 → v9999 es un no-op: los stores son
-    //     idénticos, así que IndexedDB conserva todos los datos.
-    // ============================================================
 
     const DB_VERSION = 9999;
     const DB_NAME = 'LoansW_DB';
     const db = new Dexie(DB_NAME);
 
-    // Schema completo en v13 y v9999 (idéntico).
     const SCHEMA_FINAL = {
         users: '++id, &document, email, createdAt',
         clients: '++id, userId, fullName, document, phone, email, address, city, neighborhood, company, occupation, references, notes, status, photo, createdAt, updatedAt',
@@ -1210,10 +1297,8 @@
         lossCompensations: '++id, userId, lostDebtId, paymentId, loanId, clientId, installmentId, amountAppliedToLoss, interestGenerated, moraGenerated, capitalReceived, pendingBefore, pendingAfter, appliedAt, description, createdAt'
     };
 
-    // v9999 — current. Mismo schema que v13 para no perder datos.
     db.version(9999).stores(SCHEMA_FINAL);
 
-    // v13 — histórica (agregó lossCompensations).
     db.version(13).stores({
         users: '++id, &document, email, createdAt',
         clients: '++id, userId, fullName, document, phone, email, address, city, neighborhood, company, occupation, references, notes, status, photo, createdAt, updatedAt',
@@ -1243,7 +1328,6 @@
         }
     });
 
-    // v12 — histórica (agregó lostDebts y recoveryMovements).
     db.version(12).stores({
         users: '++id, &document, email, createdAt',
         clients: '++id, userId, fullName, document, phone, email, address, city, neighborhood, company, occupation, references, notes, status, photo, createdAt, updatedAt',
@@ -1263,7 +1347,6 @@
         recoveryMovements: '++id, lostDebtId, loanId, clientId, amount, capitalRecovered, interestRecovered, recoveryDate, method, note, userId, createdAt'
     });
 
-    // v11 — histórica (la más antigua que soportamos).
     db.version(11).stores({
         users: '++id, &document, email, createdAt',
         clients: '++id, userId, fullName, document, phone, email, address, city, neighborhood, company, occupation, references, notes, status, photo, createdAt, updatedAt',
@@ -1300,8 +1383,6 @@
     // 5.1 INICIALIZACIÓN / DETECCIÓN DE VERSIONERROR
     // ============================================================
 
-    // Detecta la versión realmente almacenada en el navegador
-    // (sin tocarla). Útil para diagnosticar VersionError.
     const detectExistingDbVersion = () => new Promise((resolve) => {
         try {
             const req = indexedDB.open(DB_NAME);
@@ -1337,9 +1418,6 @@
                     `[DB] VersionError detectado. ` +
                     `Navegador tiene v${existingVersion}, código intenta abrir v${DB_VERSION}.`
                 );
-                // Este caso NO debería ocurrir con DB_VERSION = 9999,
-                // pero por si acaso algún día el usuario tiene una
-                // build con versión superior, damos mensaje claro.
                 throw new Error(
                     `La base de datos local (v${existingVersion}) es más nueva que esta versión de la app (v${DB_VERSION}). ` +
                     `Esto pasa al abrir una versión antigua de LOANS W. ` +
@@ -2013,7 +2091,7 @@
     };
 
     // ============================================================
-    // 11. COMPONENT: COBRAR MODAL (pago completo de una cuota)
+    // 11. COMPONENT: COBRAR MODAL
     // ============================================================
 
     const CobrarModal = ({
@@ -2161,7 +2239,6 @@
                         createdAt: new Date().toISOString()
                     });
 
-                    // === COMPENSACIÓN DE PÉRDIDAS CON INTERESES ===
                     if (paymentResult.breakdown.interest > 0) {
                         const interestToApply = normalizeMoney(paymentResult.breakdown.interest);
                         const allLostDebts = await db.lostDebts.where({ userId: user.id }).toArray();
@@ -2210,7 +2287,6 @@
                             }
                         }
                     }
-                    // === FIN COMPENSACIÓN ===
 
                     const allInsts = await db.installments.where({ loanId: loan.id }).toArray();
                     const loanPayments = await db.payments.where({ loanId: loan.id }).toArray();
@@ -2533,7 +2609,7 @@
     };
 
     // ============================================================
-    // 12. COMPONENT: ABONAR MODAL (pago parcial con distribución)
+    // 12. COMPONENT: ABONAR MODAL
     // ============================================================
 
     const AbonarModal = ({
@@ -2737,7 +2813,6 @@
                             createdAt: new Date().toISOString()
                         });
 
-                        // === COMPENSACIÓN DE PÉRDIDAS POR INTERÉS DE ESTE ABONO ===
                         if (paymentResult.breakdown.interest > 0) {
                             const interestToApply = normalizeMoney(paymentResult.breakdown.interest);
                             const allLostDebts = await db.lostDebts.where({ userId: user.id }).toArray();
@@ -2786,7 +2861,6 @@
                                 }
                             }
                         }
-                        // === FIN COMPENSACIÓN ===
 
                         receipts.push({
                             installmentNumber: inst.number,
@@ -4632,7 +4706,8 @@
                     )}
                 </div>
 
-                <div className="glass-card" style={{ padding: '16px', marginBottom: '14px' }} onClick={() => onNavigate('collections')}>
+                {/* ▼▼▼ PARCHE 5 — Redirige a la nueva pantalla de progreso ▼▼▼ */}
+                <div className="glass-card" style={{ padding: '16px', marginBottom: '14px' }} onClick={() => onNavigate('collectionProgress')} title="Ver progreso de cobros por mes">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                         <span style={{
                             fontSize: '11px', color: 'var(--text-secondary)',
@@ -4678,6 +4753,7 @@
                         </div>
                     )}
                 </div>
+                {/* ▲▲▲ FIN PARCHE 5 ▲▲▲ */}
 
                 {metrics.lostDebtsCount > 0 && (
                     <div className="glass-card" style={{ padding: '14px', marginBottom: '14px' }}
@@ -6449,6 +6525,409 @@
     };
 
     // ============================================================
+    // ▼▼▼ PARCHE 2 — NUEVA PÁGINA "PROGRESO DE COBROS" ▼▼▼
+    // Solo lectura de payments/installments/loans/clients vía useApp.
+    // No modifica nada de la base de datos. Try/catch defensivo.
+    // ============================================================
+    const CollectionProgressPage = ({ onNavigate }) => {
+        const { payments, installments, loans, clients, loading, refreshKey } = useApp();
+
+        const now = new Date();
+        const [selectedYear, setSelectedYear] = useState(now.getUTCFullYear());
+        const [selectedMonth, setSelectedMonth] = useState(now.getUTCMonth() + 1);
+        const [expandedClientId, setExpandedClientId] = useState(null);
+        const [error, setError] = useState(null);
+
+        const safePayments = useMemo(() =>
+            Array.isArray(payments) ? payments.filter(p => p && typeof p === 'object') : []
+        , [payments]);
+        const safeInstallments = useMemo(() =>
+            Array.isArray(installments) ? installments.filter(i => i && typeof i === 'object') : []
+        , [installments]);
+        const safeLoans = useMemo(() =>
+            Array.isArray(loans) ? loans.filter(l => l && typeof l === 'object') : []
+        , [loans]);
+        const safeClients = useMemo(() =>
+            Array.isArray(clients) ? clients.filter(c => c && typeof c === 'object') : []
+        , [clients]);
+
+        const summary = useMemo(() => {
+            try {
+                return CollectionHistoryEngine.getMonthlyProgress(
+                    safePayments, safeInstallments, safeLoans, safeClients,
+                    selectedYear, selectedMonth
+                );
+            } catch (err) {
+                console.error('[COLLECTION PROGRESS] Error calculando progreso:', err);
+                return {
+                    year: selectedYear,
+                    month: selectedMonth,
+                    monthName: getMonthName(selectedMonth),
+                    programmedAmount: 0,
+                    totalPaid: 0,
+                    progress: 0,
+                    clientsWhoPaid: [],
+                    totalPaymentsCount: 0,
+                    totalClientsCount: 0,
+                    programmedInstallmentsCount: 0,
+                    _error: true
+                };
+            }
+        }, [safePayments, safeInstallments, safeLoans, safeClients,
+            selectedYear, selectedMonth, refreshKey]);
+
+        useEffect(() => {
+            if (summary._error) setError('No se pudo calcular el progreso del mes.');
+            else setError(null);
+        }, [summary]);
+
+        const goPrevMonth = () => {
+            if (selectedMonth === 1) {
+                setSelectedYear(selectedYear - 1);
+                setSelectedMonth(12);
+            } else {
+                setSelectedMonth(selectedMonth - 1);
+            }
+            setExpandedClientId(null);
+        };
+
+        const goNextMonth = () => {
+            if (selectedMonth === 12) {
+                setSelectedYear(selectedYear + 1);
+                setSelectedMonth(1);
+            } else {
+                setSelectedMonth(selectedMonth + 1);
+            }
+            setExpandedClientId(null);
+        };
+
+        const goCurrentMonth = () => {
+            setSelectedYear(now.getUTCFullYear());
+            setSelectedMonth(now.getUTCMonth() + 1);
+            setExpandedClientId(null);
+        };
+
+        const isCurrentMonth =
+            selectedYear === now.getUTCFullYear() &&
+            selectedMonth === now.getUTCMonth() + 1;
+
+        const visualProgress = Math.min(100, Math.max(0, summary.progress));
+        const progressColor =
+            summary.progress >= 100 ? 'var(--success)' :
+            summary.progress >= 70 ? 'var(--accent)' :
+            summary.progress >= 30 ? 'var(--warning)' : 'var(--danger)';
+
+        const formatProgress = (p) => {
+            if (!isFinite(p) || p < 0) return '0';
+            const rounded = Math.round(p * 100) / 100;
+            return rounded % 1 === 0 ? rounded.toFixed(0) : rounded.toFixed(2);
+        };
+
+        if (loading) {
+            return <div style={{ padding: '20px' }}>
+                {[1, 2, 3, 4].map(i => <SkeletonCard key={i} />)}
+            </div>;
+        }
+
+        return (
+            <div style={{ padding: '20px', paddingBottom: '120px' }}>
+                <button onClick={() => onNavigate('dashboard')} className="back-btn">
+                    <IconSVG.ArrowLeft /> Volver
+                </button>
+
+                <div style={{ marginBottom: '18px' }}>
+                    <div style={{ fontSize: '26px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ color: 'var(--accent-light)' }}><IconSVG.ChartBar /></span>
+                        Progreso de cobros
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        Seguimiento de pagos y abonos reales por mes
+                    </div>
+                </div>
+
+                <div className="glass-card disabled" style={{ padding: '14px', marginBottom: '14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                        <button className="btn btn-ghost btn-sm"
+                            onClick={goPrevMonth}
+                            title="Mes anterior"
+                            style={{ padding: '8px 14px' }}>
+                            <IconSVG.ArrowLeft />
+                        </button>
+                        <div style={{ flex: 1, textAlign: 'center' }}>
+                            <div style={{ fontSize: '17px', fontWeight: '700' }}>
+                                {summary.monthName} {selectedYear}
+                            </div>
+                            {isCurrentMonth && (
+                                <div style={{ fontSize: '10px', color: 'var(--accent-light)', fontWeight: '500', marginTop: '2px' }}>
+                                    Mes actual
+                                </div>
+                            )}
+                        </div>
+                        <button className="btn btn-ghost btn-sm"
+                            onClick={goNextMonth}
+                            title="Mes siguiente"
+                            style={{ padding: '8px 14px' }}>
+                            <span style={{ display: 'inline-flex', transform: 'rotate(180deg)' }}>
+                                <IconSVG.ArrowLeft />
+                            </span>
+                        </button>
+                    </div>
+                    {!isCurrentMonth && (
+                        <button className="btn btn-ghost btn-sm"
+                            onClick={goCurrentMonth}
+                            title="Volver al mes actual"
+                            style={{ width: '100%', marginTop: '8px', fontSize: '11px' }}>
+                            Volver al mes actual
+                        </button>
+                    )}
+                </div>
+
+                {error && (
+                    <div style={{
+                        padding: '12px', marginBottom: '14px',
+                        background: 'rgba(239,68,68,0.1)',
+                        border: '1px solid rgba(239,68,68,0.25)',
+                        borderRadius: 'var(--radius-md)',
+                        color: 'var(--danger-light)', fontSize: '12px'
+                    }}>{error}</div>
+                )}
+
+                <div style={{
+                    padding: '20px',
+                    background: 'linear-gradient(135deg, rgba(99,102,241,0.08), rgba(99,102,241,0.02))',
+                    border: '1px solid rgba(99,102,241,0.15)',
+                    borderRadius: 'var(--radius-lg)',
+                    marginBottom: '14px'
+                }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+                        <div>
+                            <div style={{
+                                fontSize: '10px', color: 'var(--text-muted)',
+                                textTransform: 'uppercase', fontWeight: '600',
+                                letterSpacing: '0.04em'
+                            }}>
+                                Programado por cobrar
+                            </div>
+                            <AnimatedNumber value={summary.programmedAmount}
+                                style={{
+                                    fontSize: '20px', fontWeight: '700',
+                                    display: 'block', marginTop: '4px'
+                                }} />
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                            <div style={{
+                                fontSize: '10px', color: 'var(--text-muted)',
+                                textTransform: 'uppercase', fontWeight: '600',
+                                letterSpacing: '0.04em'
+                            }}>
+                                Total pagado
+                            </div>
+                            <AnimatedNumber value={summary.totalPaid}
+                                style={{
+                                    fontSize: '20px', fontWeight: '700',
+                                    color: 'var(--success)', display: 'block', marginTop: '4px'
+                                }} />
+                        </div>
+                    </div>
+
+                    <div style={{
+                        display: 'flex', alignItems: 'center',
+                        justifyContent: 'space-between', marginBottom: '8px'
+                    }}>
+                        <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: '600' }}>
+                            Progreso del mes
+                        </span>
+                        <span style={{ fontSize: '17px', fontWeight: '700', color: progressColor }}>
+                            {formatProgress(summary.progress)}%
+                        </span>
+                    </div>
+                    <div className="progress-bar" style={{ height: '10px' }}>
+                        <div className="progress-fill"
+                            style={{
+                                width: `${visualProgress}%`,
+                                background: summary.progress >= 100
+                                    ? 'linear-gradient(90deg, #16a34a, #4ade80)'
+                                    : undefined
+                            }} />
+                    </div>
+
+                    {summary.progress > 100 && summary.programmedAmount > 0 && (
+                        <div style={{
+                            marginTop: '10px', padding: '8px 12px',
+                            background: 'rgba(16,185,129,0.08)',
+                            borderRadius: 'var(--radius-sm)',
+                            color: 'var(--success-light)',
+                            fontSize: '11px', fontWeight: '500', textAlign: 'center'
+                        }}>
+                            Meta superada en {formatCurrency(summary.totalPaid - summary.programmedAmount)}
+                        </div>
+                    )}
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '18px' }}>
+                    <div className="glass-card disabled" style={{ padding: '12px', textAlign: 'center' }}>
+                        <div style={{
+                            fontSize: '10px', color: 'var(--text-muted)',
+                            textTransform: 'uppercase', letterSpacing: '0.04em'
+                        }}>
+                            Clientes que pagaron
+                        </div>
+                        <div style={{
+                            fontSize: '20px', fontWeight: '700',
+                            color: 'var(--accent-light)', marginTop: '4px'
+                        }}>
+                            {summary.totalClientsCount}
+                        </div>
+                    </div>
+                    <div className="glass-card disabled" style={{ padding: '12px', textAlign: 'center' }}>
+                        <div style={{
+                            fontSize: '10px', color: 'var(--text-muted)',
+                            textTransform: 'uppercase', letterSpacing: '0.04em'
+                        }}>
+                            Movimientos (pagos+abonos)
+                        </div>
+                        <div style={{ fontSize: '20px', fontWeight: '700', marginTop: '4px' }}>
+                            {summary.totalPaymentsCount}
+                        </div>
+                    </div>
+                </div>
+
+                <div style={{ marginBottom: '10px' }}>
+                    <div style={{ fontSize: '15px', fontWeight: '700' }}>
+                        Clientes que pagaron
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        Solo clientes con pagos o abonos reales en {summary.monthName} {selectedYear}
+                    </div>
+                </div>
+
+                {summary.clientsWhoPaid.length === 0 ? (
+                    <EmptyState
+                        icon={<IconSVG.Receipt />}
+                        title="No hay clientes con pagos registrados en este mes"
+                        description={
+                            summary.programmedAmount > 0
+                                ? `Se programaron ${formatCurrency(summary.programmedAmount)} pero aún no hay pagos registrados.`
+                                : 'No se registraron cuotas ni pagos en este mes.'
+                        }
+                    />
+                ) : (
+                    summary.clientsWhoPaid.map(c => {
+                        const isExpanded = expandedClientId === c.clientId;
+                        return (
+                            <div key={c.clientId}
+                                className="glass-card"
+                                style={{ padding: '14px', marginBottom: '8px' }}
+                                onClick={() => setExpandedClientId(isExpanded ? null : c.clientId)}
+                                title="Toca para ver el detalle de pagos de este cliente">
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <div style={{
+                                        width: '38px', height: '38px', borderRadius: '50%',
+                                        background: 'linear-gradient(135deg, #10b981, #059669)',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        fontSize: '16px', fontWeight: '700', color: 'white', flexShrink: 0
+                                    }}>
+                                        {getSafeInitial(c.clientName)}
+                                    </div>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div className="truncate" style={{ fontSize: '14px', fontWeight: '600' }}>
+                                            {c.clientName}
+                                        </div>
+                                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                            {c.paymentsCount} {c.paymentsCount === 1 ? 'movimiento' : 'movimientos'}
+                                            {c.loanNumber ? ` · #${c.loanNumber}` : ''}
+                                        </div>
+                                    </div>
+                                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                        <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Pagó</div>
+                                        <div style={{
+                                            fontSize: '16px', fontWeight: '700',
+                                            color: 'var(--success)'
+                                        }}>
+                                            {formatCurrency(c.totalPaid)}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {isExpanded && (
+                                    <div style={{
+                                        marginTop: '12px', paddingTop: '12px',
+                                        borderTop: '1px solid var(--glass-border)'
+                                    }}>
+                                        <div style={{
+                                            fontSize: '10px', color: 'var(--text-muted)',
+                                            textTransform: 'uppercase', fontWeight: '600',
+                                            marginBottom: '8px', letterSpacing: '0.04em'
+                                        }}>
+                                            Detalle de movimientos
+                                        </div>
+                                        {[...c.payments]
+                                            .sort((a, b) =>
+                                                new Date(b.date || 0) - new Date(a.date || 0))
+                                            .map((p, idx) => (
+                                                <div key={p.id ?? idx} style={{
+                                                    padding: '10px',
+                                                    background: 'rgba(255,255,255,0.02)',
+                                                    borderRadius: 'var(--radius-sm)',
+                                                    marginBottom: '6px'
+                                                }}>
+                                                    <div style={{
+                                                        display: 'flex',
+                                                        justifyContent: 'space-between',
+                                                        alignItems: 'center',
+                                                        marginBottom: '4px'
+                                                    }}>
+                                                        <span style={{ fontSize: '12px', fontWeight: '500' }}>
+                                                            {formatDate(p.date)}
+                                                        </span>
+                                                        <span style={{
+                                                            fontSize: '13px', fontWeight: '700',
+                                                            color: 'var(--success)'
+                                                        }}>
+                                                            {formatCurrency(p.amount)}
+                                                        </span>
+                                                    </div>
+                                                    <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                                                        {p.method}
+                                                        {p.receiptNumber ? ` · ${p.receiptNumber}` : ''}
+                                                        {p.paymentType === 'full_installment'
+                                                            ? ' · Cobro completo'
+                                                            : ' · Abono'}
+                                                    </div>
+                                                    {p.breakdown && (
+                                                        <div style={{
+                                                            display: 'grid',
+                                                            gridTemplateColumns: '1fr 1fr 1fr',
+                                                            gap: '4px', fontSize: '10px',
+                                                            color: 'var(--text-muted)',
+                                                            marginTop: '6px'
+                                                        }}>
+                                                            <span>Cap: <span style={{ color: 'var(--accent-light)', fontWeight: '600' }}>
+                                                                {formatCurrency(p.breakdown.capital || 0)}
+                                                            </span></span>
+                                                            <span>Int: <span style={{ color: 'var(--warning-light)', fontWeight: '600' }}>
+                                                                {formatCurrency(p.breakdown.interest || 0)}
+                                                            </span></span>
+                                                            <span>Mora: <span style={{ color: 'var(--danger-light)', fontWeight: '600' }}>
+                                                                {formatCurrency(p.breakdown.mora || 0)}
+                                                            </span></span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))
+                                        }
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })
+                )}
+            </div>
+        );
+    };
+    // ▲▲▲ FIN PARCHE 2 ▲▲▲
+
+    // ============================================================
     // 28. COMPONENT: FINANCE PAGE
     // ============================================================
 
@@ -7646,7 +8125,7 @@
         const [subpage, setSubpage] = useState('main');
         const [showPassword, setShowPassword] = useState(false);
         const [showReset, setShowReset] = useState(false);
-        const [resetStep, setResetStep] = useState(0); // 0=oculto, 1=primer confirm, 2=segundo confirm
+        const [resetStep, setResetStep] = useState(0);
         const [dbVersionInfo, setDbVersionInfo] = useState(null);
 
         const handleExport = async () => {
@@ -7871,7 +8350,7 @@
                 </button>
 
                 <div style={{ marginTop: '24px', textAlign: 'center', fontSize: '11px', color: 'var(--text-muted)' }}>
-                    LOANS W v10.5 · DB v{DB_VERSION}
+                    LOANS W v10.6 · DB v{DB_VERSION}
                 </div>
 
                 {showPassword && (
@@ -8034,7 +8513,7 @@
 
             const boot = async () => {
                 try {
-                    console.log('[BOOT] Iniciando Loans W v10.5...');
+                    console.log('[BOOT] Iniciando Loans W v10.6...');
                     setBootMessage('Abriendo base de datos...');
                     await initDatabase();
                     console.log('[BOOT] Base de datos lista');
@@ -8069,12 +8548,14 @@
             setAppState('login');
         }, []);
 
+        // ▼▼▼ PARCHE 4 — Agrega 'collectionProgress' a la lista de páginas sin FAB ▼▼▼
         const navigate = useCallback((p, ...a) => {
             setPage(p);
             setParams(a);
-            setShowFab(!['createLoan', 'editLoan', 'loanDetail', 'clientDetail', 'more', 'expenses', 'simulator', 'notes', 'lostDebts'].includes(p));
+            setShowFab(!['createLoan', 'editLoan', 'loanDetail', 'clientDetail', 'more', 'expenses', 'simulator', 'notes', 'lostDebts', 'collectionProgress'].includes(p));
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }, []);
+        // ▲▲▲ FIN PARCHE 4 ▲▲▲
 
         const handleFabAction = useCallback((action) => {
             if (action === 'client') navigate('clients');
@@ -8100,6 +8581,9 @@
                     case 'editLoan': return <EditLoanPage id={params[0]} onNavigate={navigate} />;
                     case 'loanDetail': return <LoanDetailPage id={params[0]} onNavigate={navigate} />;
                     case 'collections': return <CollectionsPage onNavigate={navigate} />;
+                    // ▼▼▼ PARCHE 3 — Nueva ruta para Progreso de cobros ▼▼▼
+                    case 'collectionProgress': return <CollectionProgressPage onNavigate={navigate} />;
+                    // ▲▲▲ FIN PARCHE 3 ▲▲▲
                     case 'finance': return <FinancePage onNavigate={navigate} />;
                     case 'lostDebts': return <LostDebtsPage onNavigate={navigate} />;
                     case 'expenses': return <ExpensesPage onNavigate={navigate} />;
@@ -8175,16 +8659,16 @@
     ReactDOM.render(<App />, document.getElementById('root'));
 
     console.log('========================================');
-    console.log('LOANS W v10.5 — ARRANQUE ESTABILIZADO');
+    console.log('LOANS W v10.6 — PROGRESO DE COBROS');
     console.log('========================================');
-    console.log('✅ DB v9999 con mismo schema que v13 (no-op upgrade)');
-    console.log('✅ Sin VersionError al abrir builds anteriores');
-    console.log('✅ Datos existentes conservados');
-    console.log('✅ initDatabase con diagnóstico de versión');
-    console.log('✅ Reset de emergencia en Ajustes (doble confirmación)');
-    console.log('✅ Cobrar / Abonar separados');
-    console.log('✅ Compensación automática de pérdidas con intereses');
+    console.log('✅ Parche 1: getMonthlyProgress en CollectionHistoryEngine');
+    console.log('✅ Parche 2: Componente CollectionProgressPage');
+    console.log('✅ Parche 3: Ruta collectionProgress');
+    console.log('✅ Parche 4: FAB oculto en la nueva pantalla');
+    console.log('✅ Parche 5: Card del dashboard redirige');
+    console.log('✅ DB v9999 conservada (no se toca)');
+    console.log('✅ Cobrar / Abonar / Mora / Pérdidas / Recuperación intactos');
     console.log('========================================');
 </script>
 </body>
-</html>                           
+</html>
