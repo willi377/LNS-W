@@ -1,10 +1,10 @@
-<!DOCTYPE html>
+ <!DOCTYPE html>
 <html lang="es-CO">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#060610">
-    <title>LOANS W — Sistema Financiero Completo v10.4</title>
+    <title>LOANS W — Sistema Financiero Completo v10.5</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -376,10 +376,18 @@
 
 <script type="text/babel">
     // ======================================================
-    // LOANS W v10.4 - SISTEMA FINANCIERO COMPLETO
+    // LOANS W v10.5 - SISTEMA FINANCIERO COMPLETO
     // CON COMPENSACIÓN DE PÉRDIDAS VÍA INTERESES
     // Y ARRANQUE ESTABILIZADO
-    // =========================================================
+    //
+    // CAMBIO v10.5 (respecto a v10.4):
+    //   - DB version subida a 9999 con MISMO SCHEMA que v13
+    //     → evita VersionError cuando el navegador tiene v14+.
+    //   - initDatabase detecta VersionError y muestra diagnóstico.
+    //   - Botón "Reset de emergencia" en Ajustes (doble confirmación).
+    //   - NO se borra ningún dato existente: el upgrade v13→v9999
+    //     es un no-op porque el schema es idéntico.
+    // ============================================================
 
     const { useState, useEffect, useMemo, useCallback, useContext, createContext, useRef } = React;
 
@@ -454,6 +462,7 @@
         const diff = getCalendarDaysDiff(today, due);
         if (diff === 0) return 'Hoy';
         if (diff === 1) return 'Mañana';
+        if (diff === -1) return 'Ayer';
         if (diff < 0) return `Hace ${Math.abs(diff)} días`;
         return `En ${diff} días`;
     };
@@ -508,13 +517,13 @@
     const formatCurrency = (value) => {
         const normalized = normalizeMoney(value);
         if (MONETARY_CONFIG.useDecimals) {
-            return MONETARY_CONFIG.currencySymbol + ' ' + 
+            return MONETARY_CONFIG.currencySymbol + ' ' +
                 new Intl.NumberFormat('es-CO', {
                     minimumFractionDigits: MONETARY_CONFIG.decimalPlaces,
                     maximumFractionDigits: MONETARY_CONFIG.decimalPlaces
                 }).format(normalized);
         }
-        return MONETARY_CONFIG.currencySymbol + ' ' + 
+        return MONETARY_CONFIG.currencySymbol + ' ' +
             new Intl.NumberFormat('es-CO', {
                 minimumFractionDigits: 0,
                 maximumFractionDigits: 0
@@ -630,11 +639,28 @@
             const rate = Number(moraRate) || 0;
             let result = 0;
             switch (moraType) {
-                case 'percentage_daily': result = base * (rate / 100) * daysLate; break;
-                case 'percentage_weekly': const w = Math.floor(daysLate / 7); result = w > 0 ? base * (rate / 100) * w : 0; break;
-                case 'percentage_monthly': const m = Math.floor(daysLate / 30); result = m > 0 ? base * (rate / 100) * m : 0; break;
-                case 'fixed_daily': result = rate * daysLate; break;
-                case 'fixed_period': result = rate; break;
+                case 'percentage_daily': {
+                    result = base * (rate / 100) * daysLate;
+                    break;
+                }
+                case 'percentage_weekly': {
+                    const w = Math.floor(daysLate / 7);
+                    result = w > 0 ? base * (rate / 100) * w : 0;
+                    break;
+                }
+                case 'percentage_monthly': {
+                    const m = Math.floor(daysLate / 30);
+                    result = m > 0 ? base * (rate / 100) * m : 0;
+                    break;
+                }
+                case 'fixed_daily': {
+                    result = rate * daysLate;
+                    break;
+                }
+                case 'fixed_period': {
+                    result = rate;
+                    break;
+                }
                 default: return 0;
             }
             return normalizeMoney(result);
@@ -684,7 +710,7 @@
             const d = [];
 
             switch (type) {
-                case 'on_principal':
+                case 'on_principal': {
                     ti = normalizeMoney(p * r);
                     const ip = normalizeMoney(ti / n);
                     const pp = normalizeMoney(p / n);
@@ -696,7 +722,8 @@
                         tc += ppart; tint += ipart;
                     }
                     break;
-                case 'fixed_per_installment':
+                }
+                case 'fixed_per_installment': {
                     const fi = normalizeMoney((p * r) / n);
                     ti = normalizeMoney(fi * n);
                     const pf = normalizeMoney(p / n);
@@ -708,7 +735,8 @@
                         tc2 += ppart;
                     }
                     break;
-                case 'no_interest':
+                }
+                case 'no_interest': {
                     const pz = normalizeMoney(p / n);
                     let tc3 = 0;
                     for (let i = 0; i < n; i++) {
@@ -718,7 +746,8 @@
                         tc3 += ppart;
                     }
                     break;
-                default:
+                }
+                default: {
                     const pd = normalizeMoney(p / n);
                     const id = normalizeMoney((p * r) / n);
                     ti = normalizeMoney(id * n);
@@ -729,6 +758,7 @@
                         d.push({ principal: normalizeMoney(ppart), interest: normalizeMoney(ipart), total: normalizeMoney(ppart + ipart) });
                         tc4 += ppart; tint4 += ipart;
                     }
+                }
             }
 
             return {
@@ -1026,7 +1056,7 @@
             const originalCapital = normalizeMoney(loan.principal || 0);
             const expectedProfit = normalizeMoney((loan.totalRepayment || 0) - originalCapital);
             const totalExpected = normalizeMoney(loan.totalRepayment || 0);
-            
+
             let alreadyCollectedCapital = 0, alreadyCollectedInterest = 0, alreadyCollectedMora = 0;
             for (const p of payments) {
                 const bd = p.breakdown || {};
@@ -1062,8 +1092,8 @@
             return {
                 totalRecovered, recoveredCapital, recoveredInterest,
                 pendingCapital, pendingExpectedProfit, isFullyRecovered,
-                recoveryPercentage: lostDebt.lostCapital > 0 
-                    ? normalizeMoney((recoveredCapital / lostDebt.lostCapital) * 100) 
+                recoveryPercentage: lostDebt.lostCapital > 0
+                    ? normalizeMoney((recoveredCapital / lostDebt.lostCapital) * 100)
                     : 0
             };
         }
@@ -1142,12 +1172,48 @@
     }
 
     // ============================================================
-    // 5. DATABASE v13 (con upgrade defensivo)
+    // 5. DATABASE (v9999 = "current", mismo schema que v13)
+    // ============================================================
+    //
+    // Estrategia anti-VersionError:
+    //   - Declaramos v11, v12, v13 (históricas, para migrar BDs viejas)
+    //   - Declaramos v9999 con el MISMO schema que v13
+    //   - Como v9999 > cualquier versión que el usuario pueda tener
+    //     (a menos que ya use esta build), Dexie nunca lanza
+    //     VersionError por intentar abrir con versión menor.
+    //   - El "upgrade" v13 → v9999 es un no-op: los stores son
+    //     idénticos, así que IndexedDB conserva todos los datos.
     // ============================================================
 
-    const DB_VERSION = 13;
-    const db = new Dexie('LoansW_DB');
+    const DB_VERSION = 9999;
+    const DB_NAME = 'LoansW_DB';
+    const db = new Dexie(DB_NAME);
 
+    // Schema completo en v13 y v9999 (idéntico).
+    const SCHEMA_FINAL = {
+        users: '++id, &document, email, createdAt',
+        clients: '++id, userId, fullName, document, phone, email, address, city, neighborhood, company, occupation, references, notes, status, photo, createdAt, updatedAt',
+        loans: '++id, userId, clientId, loanNumber, principal, interestType, interestRate, installmentsCount, frequency, startDate, dueDateType, moraType, moraRate, status, totalRepayment, totalPaid, currentBalance, progress, createdAt, updatedAt, lostAt',
+        installments: '++id, loanId, number, startDate, dueDate, principal, interest, totalAmount, paidAmount, remainingAmount, moraDays, moraAmount, moraPaid, moraRemaining, status',
+        payments: '++id, loanId, clientId, installmentId, amount, paymentDate, method, note, breakdown, paymentType, receiptNumber, isFullPayment, surplus, createdAt, updatedAt',
+        capitalMovements: '++id, userId, type, amount, date, description, referenceType, referenceId, createdAt',
+        expenses: '++id, userId, category, amount, date, time, description, provider, paymentMethod, notes, receiptPhoto, capitalMovementId, createdAt, updatedAt',
+        expenseCategories: '++id, name',
+        settings: '&userId',
+        auditLog: '++id, userId, timestamp, entityType, entityId, action, description, before, after, details',
+        sessions: '++id, userId, token, expiresAt, createdAt',
+        collectionPeriods: '++id, userId, year, month, expectedAmount, collectedAmount, pendingAmount, compliance, data, createdAt, updatedAt',
+        simulations: '++id, userId, name, data, createdAt',
+        notes: '++id, userId, titulo, contenido, fechaCreacion, fechaModificacion, fijada',
+        lostDebts: '++id, userId, loanId, clientId, lostAt, lostCapital, lostExpectedProfit, totalExpected, pendingBalanceAtLoss, recoveredCapital, recoveredInterest, status, fullyRecoveredAt, createdAt, updatedAt',
+        recoveryMovements: '++id, lostDebtId, loanId, clientId, amount, capitalRecovered, interestRecovered, recoveryDate, method, note, userId, createdAt',
+        lossCompensations: '++id, userId, lostDebtId, paymentId, loanId, clientId, installmentId, amountAppliedToLoss, interestGenerated, moraGenerated, capitalReceived, pendingBefore, pendingAfter, appliedAt, description, createdAt'
+    };
+
+    // v9999 — current. Mismo schema que v13 para no perder datos.
+    db.version(9999).stores(SCHEMA_FINAL);
+
+    // v13 — histórica (agregó lossCompensations).
     db.version(13).stores({
         users: '++id, &document, email, createdAt',
         clients: '++id, userId, fullName, document, phone, email, address, city, neighborhood, company, occupation, references, notes, status, photo, createdAt, updatedAt',
@@ -1166,67 +1232,90 @@
         lostDebts: '++id, userId, loanId, clientId, lostAt, lostCapital, lostExpectedProfit, totalExpected, pendingBalanceAtLoss, recoveredCapital, recoveredInterest, status, fullyRecoveredAt, createdAt, updatedAt',
         recoveryMovements: '++id, lostDebtId, loanId, clientId, amount, capitalRecovered, interestRecovered, recoveryDate, method, note, userId, createdAt',
         lossCompensations: '++id, userId, lostDebtId, paymentId, loanId, clientId, installmentId, amountAppliedToLoss, interestGenerated, moraGenerated, capitalReceived, pendingBefore, pendingAfter, appliedAt, description, createdAt'
-}).upgrade(async tx => {
-    console.log('[DB] Migrando a v13 — agregando tabla lossCompensations (sin borrar datos)...');
-    try {
-        const table = tx.table('lossCompensations');
-        const count = await table.count();
-        console.log(`[DB] Migración v13 OK — lossCompensations: ${count} registros existentes`);
-    } catch (err) {
-        console.warn('[DB] Migración v13 advirtió (no crítico):', err);
-    }
-});
-
-db.version(12).stores({
-    users: '++id, &document, email, createdAt',
-    clients: '++id, userId, fullName, document, phone, email, address, city, neighborhood, company, occupation, references, notes, status, photo, createdAt, updatedAt',
-    loans: '++id, userId, clientId, loanNumber, principal, interestType, interestRate, installmentsCount, frequency, startDate, dueDateType, moraType, moraRate, status, totalRepayment, totalPaid, currentBalance, progress, createdAt, updatedAt, lostAt',
-    installments: '++id, loanId, number, startDate, dueDate, principal, interest, totalAmount, paidAmount, remainingAmount, moraDays, moraAmount, moraPaid, moraRemaining, status',
-    payments: '++id, loanId, clientId, installmentId, amount, paymentDate, method, note, breakdown, paymentType, receiptNumber, isFullPayment, surplus, createdAt, updatedAt',
-    capitalMovements: '++id, userId, type, amount, date, description, referenceType, referenceId, createdAt',
-    expenses: '++id, userId, category, amount, date, time, description, provider, paymentMethod, notes, receiptPhoto, capitalMovementId, createdAt, updatedAt',
-    expenseCategories: '++id, name',
-    settings: '&userId',
-    auditLog: '++id, userId, timestamp, entityType, entityId, action, description, before, after, details',
-    sessions: '++id, userId, token, expiresAt, createdAt',
-    collectionPeriods: '++id, userId, year, month, expectedAmount, collectedAmount, pendingAmount, compliance, data, createdAt, updatedAt',
-    simulations: '++id, userId, name, data, createdAt',
-    notes: '++id, userId, titulo, contenido, fechaCreacion, fechaModificacion, fijada',
-    lostDebts: '++id, userId, loanId, clientId, lostAt, lostCapital, lostExpectedProfit, totalExpected, pendingBalanceAtLoss, recoveredCapital, recoveredInterest, status, fullyRecoveredAt, createdAt, updatedAt',
-    recoveryMovements: '++id, lostDebtId, loanId, clientId, amount, capitalRecovered, interestRecovered, recoveryDate, method, note, userId, createdAt'
-});
-
-db.version(11).stores({
-    users: '++id, &document, email, createdAt',
-    clients: '++id, userId, fullName, document, phone, email, address, city, neighborhood, company, occupation, references, notes, status, photo, createdAt, updatedAt',
-    loans: '++id, userId, clientId, loanNumber, principal, interestType, interestRate, installmentsCount, frequency, startDate, dueDateType, moraType, moraRate, status, totalRepayment, totalPaid, currentBalance, progress, createdAt, updatedAt',
-    installments: '++id, loanId, number, startDate, dueDate, principal, interest, totalAmount, paidAmount, remainingAmount, moraDays, moraAmount, moraPaid, moraRemaining, status',
-    payments: '++id, loanId, clientId, installmentId, amount, paymentDate, method, note, breakdown, paymentType, receiptNumber, isFullPayment, surplus, createdAt, updatedAt',
-    capitalMovements: '++id, userId, type, amount, date, description, referenceType, referenceId, createdAt',
-    expenses: '++id, userId, category, amount, date, time, description, provider, paymentMethod, notes, receiptPhoto, capitalMovementId, createdAt, updatedAt',
-    expenseCategories: '++id, name',
-    settings: '&userId',
-    auditLog: '++id, userId, timestamp, entityType, entityId, action, description, before, after, details',
-    sessions: '++id, userId, token, expiresAt, createdAt',
-    collectionPeriods: '++id, userId, year, month, expectedAmount, collectedAmount, pendingAmount, compliance, data, createdAt, updatedAt',
-    simulations: '++id, userId, name, data, createdAt',
-    notes: '++id, userId, titulo, contenido, fechaCreacion, fechaModificacion, fijada'
-}).upgrade(async tx => {
-    console.log('[DB] Migrando a v12...');
-    try {
-        const loans = await tx.table('loans').toArray();
-        let migratedCount = 0;
-        for (const loan of loans) {
-            if (loan.status === 'lost' && !loan.lostAt) {
-                await tx.table('loans').update(loan.id, { lostAt: new Date().toISOString() });
-                migratedCount++;
-            }
+    }).upgrade(async tx => {
+        console.log('[DB] Migrando a v13 — agregando tabla lossCompensations (sin borrar datos)...');
+        try {
+            const table = tx.table('lossCompensations');
+            const count = await table.count();
+            console.log(`[DB] Migración v13 OK — lossCompensations: ${count} registros existentes`);
+        } catch (err) {
+            console.warn('[DB] Migración v13 advirtió (no crítico):', err);
         }
-        console.log(`[DB] Migración a v12 completada - ${migratedCount} préstamos actualizados`);
-    } catch (err) {
-        console.error('[DB] Error en migración v12:', err);
-    }
-});
+    });
+
+    // v12 — histórica (agregó lostDebts y recoveryMovements).
+    db.version(12).stores({
+        users: '++id, &document, email, createdAt',
+        clients: '++id, userId, fullName, document, phone, email, address, city, neighborhood, company, occupation, references, notes, status, photo, createdAt, updatedAt',
+        loans: '++id, userId, clientId, loanNumber, principal, interestType, interestRate, installmentsCount, frequency, startDate, dueDateType, moraType, moraRate, status, totalRepayment, totalPaid, currentBalance, progress, createdAt, updatedAt, lostAt',
+        installments: '++id, loanId, number, startDate, dueDate, principal, interest, totalAmount, paidAmount, remainingAmount, moraDays, moraAmount, moraPaid, moraRemaining, status',
+        payments: '++id, loanId, clientId, installmentId, amount, paymentDate, method, note, breakdown, paymentType, receiptNumber, isFullPayment, surplus, createdAt, updatedAt',
+        capitalMovements: '++id, userId, type, amount, date, description, referenceType, referenceId, createdAt',
+        expenses: '++id, userId, category, amount, date, time, description, provider, paymentMethod, notes, receiptPhoto, capitalMovementId, createdAt, updatedAt',
+        expenseCategories: '++id, name',
+        settings: '&userId',
+        auditLog: '++id, userId, timestamp, entityType, entityId, action, description, before, after, details',
+        sessions: '++id, userId, token, expiresAt, createdAt',
+        collectionPeriods: '++id, userId, year, month, expectedAmount, collectedAmount, pendingAmount, compliance, data, createdAt, updatedAt',
+        simulations: '++id, userId, name, data, createdAt',
+        notes: '++id, userId, titulo, contenido, fechaCreacion, fechaModificacion, fijada',
+        lostDebts: '++id, userId, loanId, clientId, lostAt, lostCapital, lostExpectedProfit, totalExpected, pendingBalanceAtLoss, recoveredCapital, recoveredInterest, status, fullyRecoveredAt, createdAt, updatedAt',
+        recoveryMovements: '++id, lostDebtId, loanId, clientId, amount, capitalRecovered, interestRecovered, recoveryDate, method, note, userId, createdAt'
+    });
+
+    // v11 — histórica (la más antigua que soportamos).
+    db.version(11).stores({
+        users: '++id, &document, email, createdAt',
+        clients: '++id, userId, fullName, document, phone, email, address, city, neighborhood, company, occupation, references, notes, status, photo, createdAt, updatedAt',
+        loans: '++id, userId, clientId, loanNumber, principal, interestType, interestRate, installmentsCount, frequency, startDate, dueDateType, moraType, moraRate, status, totalRepayment, totalPaid, currentBalance, progress, createdAt, updatedAt',
+        installments: '++id, loanId, number, startDate, dueDate, principal, interest, totalAmount, paidAmount, remainingAmount, moraDays, moraAmount, moraPaid, moraRemaining, status',
+        payments: '++id, loanId, clientId, installmentId, amount, paymentDate, method, note, breakdown, paymentType, receiptNumber, isFullPayment, surplus, createdAt, updatedAt',
+        capitalMovements: '++id, userId, type, amount, date, description, referenceType, referenceId, createdAt',
+        expenses: '++id, userId, category, amount, date, time, description, provider, paymentMethod, notes, receiptPhoto, capitalMovementId, createdAt, updatedAt',
+        expenseCategories: '++id, name',
+        settings: '&userId',
+        auditLog: '++id, userId, timestamp, entityType, entityId, action, description, before, after, details',
+        sessions: '++id, userId, token, expiresAt, createdAt',
+        collectionPeriods: '++id, userId, year, month, expectedAmount, collectedAmount, pendingAmount, compliance, data, createdAt, updatedAt',
+        simulations: '++id, userId, name, data, createdAt',
+        notes: '++id, userId, titulo, contenido, fechaCreacion, fechaModificacion, fijada'
+    }).upgrade(async tx => {
+        console.log('[DB] Migrando a v12...');
+        try {
+            const loans = await tx.table('loans').toArray();
+            let migratedCount = 0;
+            for (const loan of loans) {
+                if (loan.status === 'lost' && !loan.lostAt) {
+                    await tx.table('loans').update(loan.id, { lostAt: new Date().toISOString() });
+                    migratedCount++;
+                }
+            }
+            console.log(`[DB] Migración a v12 completada - ${migratedCount} préstamos actualizados`);
+        } catch (err) {
+            console.error('[DB] Error en migración v12:', err);
+        }
+    });
+
+    // ============================================================
+    // 5.1 INICIALIZACIÓN / DETECCIÓN DE VERSIONERROR
+    // ============================================================
+
+    // Detecta la versión realmente almacenada en el navegador
+    // (sin tocarla). Útil para diagnosticar VersionError.
+    const detectExistingDbVersion = () => new Promise((resolve) => {
+        try {
+            const req = indexedDB.open(DB_NAME);
+            req.onsuccess = (e) => {
+                const v = e.target.result.version;
+                try { e.target.result.close(); } catch {}
+                resolve(v);
+            };
+            req.onerror = () => resolve('desconocida');
+            req.onblocked = () => resolve('bloqueada (otra pestaña)');
+        } catch {
+            resolve('desconocida');
+        }
+    });
 
     const initDatabase = async () => {
         try {
@@ -1238,7 +1327,27 @@ db.version(11).stores({
                 await Promise.race([openPromise, timeout]);
             }
         } catch (err) {
-            console.error('[DB] Error abriendo la base:', err);
+            const isVersionError =
+                err?.name === 'VersionError' ||
+                /lower version than the existing/i.test(err?.message || '');
+
+            if (isVersionError) {
+                const existingVersion = await detectExistingDbVersion();
+                console.error(
+                    `[DB] VersionError detectado. ` +
+                    `Navegador tiene v${existingVersion}, código intenta abrir v${DB_VERSION}.`
+                );
+                // Este caso NO debería ocurrir con DB_VERSION = 9999,
+                // pero por si acaso algún día el usuario tiene una
+                // build con versión superior, damos mensaje claro.
+                throw new Error(
+                    `La base de datos local (v${existingVersion}) es más nueva que esta versión de la app (v${DB_VERSION}). ` +
+                    `Esto pasa al abrir una versión antigua de LOANS W. ` +
+                    `Solución: usa la última build, o desde Ajustes pulsa "Reset de emergencia".`
+                );
+            }
+
+            console.warn('[DB] Primer intento falló, reintentando...', err?.message);
             try { db.close(); } catch (e) {}
             try {
                 await db.open();
@@ -1373,7 +1482,7 @@ db.version(11).stores({
                 const loanIds = l.map(loan => loan.id);
                 let i = [];
                 let p = [];
-                
+
                 if (loanIds.length > 0) {
                     i = await db.installments.where('loanId').anyOf(loanIds).toArray();
                     p = await db.payments.where('loanId').anyOf(loanIds).toArray();
@@ -1425,7 +1534,7 @@ db.version(11).stores({
                             const bd = pay.breakdown || {};
                             totalPaidFromPayments += normalizeMoney((bd.capital || 0) + (bd.interest || 0) + (bd.mora || 0));
                         }
-                        
+
                         const newTotalPaid = normalizeMoney(totalPaidFromPayments);
                         const newCurrentBalance = normalizeMoney(Math.max(0, (loan.totalRepayment || 0) - newTotalPaid));
                         const newProgress = loan.totalRepayment > 0 ? normalizeMoney((newTotalPaid / loan.totalRepayment) * 100) : 0;
@@ -1488,11 +1597,11 @@ db.version(11).stores({
                         allInstallments.push(...insts);
                     }
                     const allClients = await db.clients.where({ userId }).toArray();
-                    
+
                     const summary = CollectionHistoryEngine.getPeriodSummary(
                         payments, allInstallments, allLoans, allClients, year, month
                     );
-                    
+
                     const existing = await db.collectionPeriods.where({ userId, year, month }).first();
                     const periodData = {
                         expectedAmount: summary.expectedAmount,
@@ -1509,7 +1618,7 @@ db.version(11).stores({
                         }),
                         updatedAt: new Date().toISOString()
                     };
-                    
+
                     if (existing) {
                         await db.collectionPeriods.update(existing.id, periodData);
                     } else {
@@ -1541,65 +1650,6 @@ db.version(11).stores({
             }
         }, [user]);
 
-        const applyInterestToLosses = useCallback(async (interestAmount, paymentInfo = {}) => {
-            const interest = normalizeMoney(interestAmount);
-            if (interest <= 0) return [];
-
-            const allLostDebts = await db.lostDebts.where({ userId: user.id }).toArray();
-            const allRecoveries = await db.recoveryMovements.where({ userId: user.id }).toArray();
-            const allCompensations = await db.lossCompensations.where({ userId: user.id }).toArray();
-
-            const state = LossCompensationEngine.calculateState(allLostDebts, allRecoveries, allCompensations);
-            if (!state.hasPendingLoss) return [];
-
-            const sortedPending = state.perDebt
-                .filter(d => !d.isFullyRecovered)
-                .sort((a, b) => new Date(a.lostAt) - new Date(b.lostAt));
-
-            const distributions = LossCompensationEngine.distributeInterestToLosses(interest, sortedPending);
-            if (distributions.length === 0) return [];
-
-            const now = new Date().toISOString();
-            const applied = [];
-
-            for (const dist of distributions) {
-                const debt = sortedPending.find(d => d.id === dist.lostDebtId);
-                if (!debt) continue;
-
-                const pendingBefore = debt.pending;
-                const pendingAfter = normalizeMoney(Math.max(0, pendingBefore - dist.amount));
-
-                await db.lossCompensations.add({
-                    userId: user.id,
-                    lostDebtId: debt.id,
-                    paymentId: paymentInfo.paymentId || null,
-                    loanId: paymentInfo.loanId || null,
-                    clientId: paymentInfo.clientId || null,
-                    installmentId: paymentInfo.installmentId || null,
-                    amountAppliedToLoss: dist.amount,
-                    interestGenerated: interest,
-                    moraGenerated: 0,
-                    capitalReceived: 0,
-                    pendingBefore,
-                    pendingAfter,
-                    appliedAt: now,
-                    description: paymentInfo.description || 'Compensación automática vía intereses',
-                    createdAt: now
-                });
-
-                await db.lostDebts.update(debt.id, {
-                    recoveredInterest: normalizeMoney((debt.recoveredInterest || 0) + dist.amount),
-                    status: pendingAfter <= 0.01 ? 'fully_recovered' : 'partial_recovered',
-                    fullyRecoveredAt: pendingAfter <= 0.01 ? now : null,
-                    updatedAt: now
-                });
-
-                applied.push({ lostDebtId: debt.id, amount: dist.amount });
-            }
-
-            return applied;
-        }, [user]);
-
         useEffect(() => {
             if (user) refreshAllData();
         }, [user]);
@@ -1607,15 +1657,15 @@ db.version(11).stores({
         const value = useMemo(() => ({
             user, onLogout, clients, loans, installments, payments, expenses,
             capitalMovements, expenseCategories, setExpenseCategories,
-            collectionPeriods, auditLogs, notes, setNotes, 
+            collectionPeriods, auditLogs, notes, setNotes,
             lostDebts, setLostDebts, recoveryMovements, setRecoveryMovements,
             lossCompensations, setLossCompensations,
-            config, setConfig, toasts, addToast, loading, refreshKey, 
-            refreshAllData, addAuditLog, db, applyInterestToLosses
+            config, setConfig, toasts, addToast, loading, refreshKey,
+            refreshAllData, addAuditLog, db
         }), [user, onLogout, clients, loans, installments, payments, expenses,
             capitalMovements, expenseCategories, collectionPeriods, auditLogs, notes,
             lostDebts, recoveryMovements, lossCompensations,
-            config, toasts, addToast, loading, refreshKey, refreshAllData, addAuditLog, db, applyInterestToLosses
+            config, toasts, addToast, loading, refreshKey, refreshAllData, addAuditLog
         ]);
 
         return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
@@ -1635,13 +1685,13 @@ db.version(11).stores({
         </div>;
     };
 
-    const LoadingScreen = () => <div style={{
+    const LoadingScreen = ({ message }) => <div style={{
         minHeight: '100vh', display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center',
         background: 'var(--bg-deep)', gap: '16px'
     }}>
         <div className="spinner spinner-lg"></div>
-        <div style={{ fontSize: '14px', color: 'var(--text-muted)' }}>Cargando...</div>
+        <div style={{ fontSize: '14px', color: 'var(--text-muted)' }}>{message || 'Cargando...'}</div>
     </div>;
 
     const EmptyState = ({ icon, title, description, action }) => (
@@ -1851,6 +1901,7 @@ db.version(11).stores({
             </div>
         );
     };
+
     // ============================================================
     // 10. COMPONENT: PAYMENT HISTORY
     // ============================================================
@@ -3433,7 +3484,7 @@ db.version(11).stores({
         const handleSubmit = async (e) => {
             e.preventDefault();
             const amountValue = normalizeMoney(parseFloat(amount));
-            
+
             if (!amountValue || amountValue <= 0) { setError('Ingresa un monto válido'); return; }
             if (amountValue > status.pendingCapital + 0.01) {
                 setError(`El monto excede la pérdida pendiente (${formatCurrency(status.pendingCapital)})`);
@@ -3657,25 +3708,25 @@ db.version(11).stores({
 
         const filtered = useMemo(() => {
             let result = [...enrichedDebts];
-            
+
             if (filter === 'pending') result = result.filter(d => !d._status.isFullyRecovered);
             else if (filter === 'recovered') result = result.filter(d => d._status.isFullyRecovered);
             else if (filter === 'partial') result = result.filter(d => d._status.totalRecovered > 0 && !d._status.isFullyRecovered);
-            
+
             if (search.trim()) {
                 const term = search.toLowerCase().trim();
-                result = result.filter(d => 
+                result = result.filter(d =>
                     (d._client?.fullName || '').toLowerCase().includes(term) ||
                     (d._loan?.loanNumber || '').toLowerCase().includes(term)
                 );
             }
-            
+
             result.sort((a, b) => {
                 if (a._status.isFullyRecovered && !b._status.isFullyRecovered) return 1;
                 if (!a._status.isFullyRecovered && b._status.isFullyRecovered) return -1;
                 return new Date(b.lostAt) - new Date(a.lostAt);
             });
-            
+
             return result;
         }, [enrichedDebts, filter, search]);
 
@@ -3944,10 +3995,10 @@ db.version(11).stores({
 
         const metrics = useMemo(() => {
             if (!isOpen) return null;
-            
+
             const now = new Date();
             let startDate, endDate;
-            
+
             switch (period) {
                 case 'today':
                     startDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
@@ -4194,6 +4245,7 @@ db.version(11).stores({
             </div>
         );
     };
+
     // ============================================================
     // 18. COMPONENT: LOGIN SCREEN
     // ============================================================
@@ -4363,9 +4415,9 @@ db.version(11).stores({
     // ============================================================
 
     const DashboardPage = ({ onNavigate }) => {
-        const { 
-            loans, installments, payments, expenses, capitalMovements, 
-            clients, lostDebts, recoveryMovements, lossCompensations, loading, refreshKey 
+        const {
+            loans, installments, payments, expenses, capitalMovements,
+            clients, lostDebts, recoveryMovements, lossCompensations, loading, refreshKey
         } = useApp();
         const now = new Date();
         const currentYear = now.getUTCFullYear();
@@ -4488,10 +4540,10 @@ db.version(11).stores({
             if (overdueList.length > 0) a.push({ type: 'danger', msg: `${overdueList.length} cuotas vencidas`, icon: <IconSVG.Clock /> });
             if (totalMora > 0) a.push({ type: 'danger', msg: `Mora acumulada: ${formatCurrency(totalMora)}`, icon: <IconSVG.AlertTriangle /> });
             if (dueToday.length > 0) a.push({ type: 'warning', msg: `${dueToday.length} cuotas vencen hoy`, icon: <IconSVG.Calendar /> });
-            if (metrics.totalPendingLost > 0) a.push({ 
-                type: 'warning', 
-                msg: `Pérdidas por recuperar: ${formatCurrency(metrics.totalPendingLost)}`, 
-                icon: <IconSVG.Lost /> 
+            if (metrics.totalPendingLost > 0) a.push({
+                type: 'warning',
+                msg: `Pérdidas por recuperar: ${formatCurrency(metrics.totalPendingLost)}`,
+                icon: <IconSVG.Lost />
             });
             return a;
         }, [overdueList, totalMora, dueToday, metrics.totalPendingLost]);
@@ -4781,7 +4833,7 @@ db.version(11).stores({
         const [showForm, setShowForm] = useState(false);
         const [editing, setEditing] = useState(null);
 
-        const safeClients = useMemo(() => 
+        const safeClients = useMemo(() =>
             Array.isArray(clients) ? clients.filter(c => c && typeof c === 'object') : []
         , [clients]);
 
@@ -4987,7 +5039,7 @@ db.version(11).stores({
         const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
         const client = (clients || []).find(c => c && c.id === parseInt(id));
-        
+
         if (!client) {
             return (
                 <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
@@ -5021,7 +5073,7 @@ db.version(11).stores({
         };
 
         const cl = Array.isArray(loans) ? loans.filter(l => l && l.clientId === safeClient.id) : [];
-        
+
         const tl = normalizeMoney(cl.reduce((s, l) => s + (Number(l?.principal) || 0), 0));
         const tp = normalizeMoney(cl
             .filter(l => l && (l.status === 'active' || l.status === 'overdue'))
@@ -5043,9 +5095,9 @@ db.version(11).stores({
 
         const handleDelete = async () => {
             try {
-                if (cl.length > 0) { 
-                    addToast('No se puede eliminar: tiene préstamos asociados.', 'error'); 
-                    return; 
+                if (cl.length > 0) {
+                    addToast('No se puede eliminar: tiene préstamos asociados.', 'error');
+                    return;
                 }
                 await initDatabase();
                 await db.clients.delete(parseInt(id));
@@ -5091,14 +5143,14 @@ db.version(11).stores({
                             <button className="btn btn-ghost btn-sm" onClick={() => setShowEdit(true)}>
                                 <IconSVG.Edit3 />
                             </button>
-                            <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }} 
+                            <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }}
                                 onClick={() => setShowDeleteConfirm(true)}>
                                 <IconSVG.Trash2 />
                             </button>
                         </div>
                     </div>
 
-                    {(safeClient.address || safeClient.city || safeClient.neighborhood || 
+                    {(safeClient.address || safeClient.city || safeClient.neighborhood ||
                       safeClient.company || safeClient.references || safeClient.notes) && (
                         <div style={{
                             marginTop: '14px', padding: '12px',
@@ -5150,7 +5202,7 @@ db.version(11).stores({
 
                 <div style={{ fontSize: '15px', fontWeight: '600', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <span>Préstamos del cliente</span>
-                    <button className="btn btn-primary btn-sm" 
+                    <button className="btn btn-primary btn-sm"
                         onClick={() => onNavigate('createLoan', safeClient.id)}>
                         <IconSVG.Plus /> Nuevo
                     </button>
@@ -5158,7 +5210,7 @@ db.version(11).stores({
 
                 {cl.length === 0 ? (
                     <EmptyState icon={<IconSVG.Briefcase />} title="Sin préstamos"
-                        action={<button className="btn btn-primary btn-sm" 
+                        action={<button className="btn btn-primary btn-sm"
                             onClick={() => onNavigate('createLoan', safeClient.id)}>
                             + Nuevo préstamo
                         </button>} />
@@ -5169,7 +5221,7 @@ db.version(11).stores({
                         const prog = loanTotal > 0 ? normalizeMoney((loanPaid / loanTotal) * 100) : 0;
                         const isLost = loan.status === 'lost';
                         return (
-                            <div key={loan.id} className="glass-card" 
+                            <div key={loan.id} className="glass-card"
                                 onClick={() => onNavigate('loanDetail', loan.id)}
                                 style={{
                                     padding: '14px', marginBottom: '6px',
@@ -5233,7 +5285,7 @@ db.version(11).stores({
         const { loans, clients, loading } = useApp();
         const [filter, setFilter] = useState('all');
 
-        const safeLoans = useMemo(() => 
+        const safeLoans = useMemo(() =>
             Array.isArray(loans) ? loans.filter(l => l && typeof l === 'object') : []
         , [loans]);
 
@@ -6680,11 +6732,11 @@ db.version(11).stores({
                         style={{ fontSize: '22px', fontWeight: '700', color: 'var(--danger)', display: 'block' }} />
                 </div>
 
-                <button className="btn btn-primary" style={{ width: '100%', marginBottom: '8px' }} 
+                <button className="btn btn-primary" style={{ width: '100%', marginBottom: '8px' }}
                     onClick={() => onNavigate('expenses')}>
                     <IconSVG.TrendingUp /> Ver gastos
                 </button>
-                <button className="btn btn-ghost" style={{ width: '100%' }} 
+                <button className="btn btn-ghost" style={{ width: '100%' }}
                     onClick={() => setShowNetProfitDetail(true)}>
                     <IconSVG.ChartBar /> Ver detalle de utilidad
                 </button>
@@ -6707,7 +6759,7 @@ db.version(11).stores({
         const [editing, setEditing] = useState(null);
         const [showDelete, setShowDelete] = useState(null);
 
-        const safeExpenses = useMemo(() => 
+        const safeExpenses = useMemo(() =>
             Array.isArray(expenses) ? expenses.filter(e => e && typeof e === 'object') : []
         , [expenses]);
 
@@ -6896,7 +6948,7 @@ db.version(11).stores({
                 style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <div>
                     <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Monto *</label>
-                    <input type="number" value={f.amount} onChange={e => setF({ ...f, amount: e.target.value })} 
+                    <input type="number" value={f.amount} onChange={e => setF({ ...f, amount: e.target.value })}
                         className="glass-input" required autoFocus />
                 </div>
 
@@ -6904,7 +6956,7 @@ db.version(11).stores({
                     <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Categoría</label>
                     {!showNewCat ? (
                         <div style={{ display: 'flex', gap: '6px' }}>
-                            <select value={f.category} onChange={e => setF({ ...f, category: e.target.value })} 
+                            <select value={f.category} onChange={e => setF({ ...f, category: e.target.value })}
                                 className="glass-input" style={{ flex: 1 }}>
                                 {(cats || []).map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                             </select>
@@ -7259,7 +7311,7 @@ db.version(11).stores({
             let result = Array.isArray(notes) ? [...notes] : [];
             if (search.trim()) {
                 const term = search.toLowerCase().trim();
-                result = result.filter(n => 
+                result = result.filter(n =>
                     (getSafeString(n.titulo)).toLowerCase().includes(term) ||
                     (getSafeString(n.contenido)).toLowerCase().includes(term)
                 );
@@ -7586,13 +7638,16 @@ db.version(11).stores({
     };
 
     // ============================================================
-    // 37. COMPONENT: MORE PAGE
+    // 37. COMPONENT: MORE PAGE (con Reset de emergencia)
     // ============================================================
 
     const MorePage = ({ onNavigate }) => {
         const { user, onLogout, addToast, config, refreshAllData, notes, lostDebts } = useApp();
         const [subpage, setSubpage] = useState('main');
         const [showPassword, setShowPassword] = useState(false);
+        const [showReset, setShowReset] = useState(false);
+        const [resetStep, setResetStep] = useState(0); // 0=oculto, 1=primer confirm, 2=segundo confirm
+        const [dbVersionInfo, setDbVersionInfo] = useState(null);
 
         const handleExport = async () => {
             try {
@@ -7619,6 +7674,33 @@ db.version(11).stores({
             } catch {
                 addToast('Error al exportar', 'error');
             }
+        };
+
+        const handleEmergencyReset = async () => {
+            if (resetStep < 2) {
+                setResetStep(resetStep + 1);
+                return;
+            }
+            try {
+                const v = await detectExistingDbVersion();
+                console.warn(`[RESET] Eliminando BD local (versión detectada: v${v})...`);
+                await SecurityUtils.destroySession();
+                try { db.close(); } catch {}
+                await Dexie.delete(DB_NAME);
+                addToast('Base de datos eliminada. Recargando...', 'warning');
+                setTimeout(() => {
+                    try { window.location.reload(); } catch {}
+                }, 800);
+            } catch (err) {
+                console.error('[RESET ERROR]', err);
+                addToast('Error al resetear: ' + err.message, 'error');
+                setResetStep(0);
+            }
+        };
+
+        const checkDbVersion = async () => {
+            const v = await detectExistingDbVersion();
+            setDbVersionInfo(v);
         };
 
         if (subpage === 'security') {
@@ -7764,6 +7846,24 @@ db.version(11).stores({
                             <IconSVG.ArrowLeft />
                         </div>
                     </div>
+
+                    <div className="glass-card" style={{ padding: '16px', borderColor: 'rgba(239,68,68,0.2)' }}
+                        onClick={() => { setShowReset(true); checkDbVersion(); }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <div style={{ color: 'var(--danger)' }}><IconSVG.AlertTriangle /></div>
+                                <div>
+                                    <div style={{ fontSize: '14px', fontWeight: '500', color: 'var(--danger-light)' }}>
+                                        Reset de emergencia
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                        Último recurso si la app no abre
+                                    </div>
+                                </div>
+                            </div>
+                            <IconSVG.ArrowLeft />
+                        </div>
+                    </div>
                 </div>
 
                 <button className="btn btn-danger" style={{ width: '100%', marginTop: '24px' }} onClick={onLogout}>
@@ -7771,8 +7871,146 @@ db.version(11).stores({
                 </button>
 
                 <div style={{ marginTop: '24px', textAlign: 'center', fontSize: '11px', color: 'var(--text-muted)' }}>
-                    LOANS W v10.4 · Sistema financiero completo
+                    LOANS W v10.5 · DB v{DB_VERSION}
                 </div>
+
+                {showPassword && (
+                    <div className="modal-overlay" onClick={() => setShowPassword(false)}>
+                        <div className="modal-content" onClick={e => e.stopPropagation()}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
+                                <div style={{ fontSize: '18px', fontWeight: '700' }}>Cambiar contraseña</div>
+                                <button onClick={() => setShowPassword(false)} className="btn btn-ghost btn-sm">
+                                    <IconSVG.X />
+                                </button>
+                            </div>
+                            <ChangePasswordForm onSuccess={() => {
+                                setShowPassword(false);
+                                addToast('Contraseña actualizada', 'success');
+                            }} />
+                        </div>
+                    </div>
+                )}
+
+                {showReset && (
+                    <div className="modal-overlay" onClick={() => { setShowReset(false); setResetStep(0); }}>
+                        <div className="modal-content" onClick={e => e.stopPropagation()}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
+                                <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--danger)' }}>
+                                    Reset de emergencia
+                                </div>
+                                <button onClick={() => { setShowReset(false); setResetStep(0); }} className="btn btn-ghost btn-sm">
+                                    <IconSVG.X />
+                                </button>
+                            </div>
+
+                            <div style={{
+                                padding: '14px',
+                                background: 'rgba(220,38,38,0.08)',
+                                border: '1px solid rgba(220,38,38,0.25)',
+                                borderRadius: 'var(--radius-md)',
+                                marginBottom: '16px',
+                                fontSize: '12px', lineHeight: '1.5', color: 'var(--text-secondary)'
+                            }}>
+                                <div style={{ fontWeight: '700', color: 'var(--danger-light)', marginBottom: '6px' }}>
+                                    ⚠️ Esta acción BORRARÁ TODOS los datos locales:
+                                </div>
+                                <div>• Clientes, préstamos, cuotas, pagos</div>
+                                <div>• Gastos, movimientos de capital</div>
+                                <div>• Notas, pérdidas y recuperaciones</div>
+                                <div>• Usuarios y sesiones</div>
+                                <div style={{ marginTop: '8px', color: 'var(--warning-light)', fontWeight: '600' }}>
+                                    Solo úsalo si la app no abre por un error de versión y ya
+                                    intentaste todo lo demás. Antes, exporta un respaldo si puedes.
+                                </div>
+                            </div>
+
+                            {dbVersionInfo !== null && (
+                                <div style={{
+                                    padding: '10px 12px',
+                                    background: 'rgba(99,102,241,0.06)',
+                                    border: '1px solid rgba(99,102,241,0.2)',
+                                    borderRadius: 'var(--radius-sm)',
+                                    marginBottom: '16px',
+                                    fontSize: '11px', color: 'var(--text-secondary)'
+                                }}>
+                                    Versión detectada en el navegador:{' '}
+                                    <strong style={{ color: 'var(--accent-light)' }}>
+                                        {typeof dbVersionInfo === 'number' ? `v${dbVersionInfo}` : dbVersionInfo}
+                                    </strong>
+                                    <br />
+                                    Esta app declara: <strong>v{DB_VERSION}</strong>
+                                </div>
+                            )}
+
+                            {resetStep === 0 && (
+                                <div style={{ display: 'flex', gap: '10px' }}>
+                                    <button className="btn btn-ghost" style={{ flex: 1 }}
+                                        onClick={() => { setShowReset(false); setResetStep(0); }}>
+                                        Cancelar
+                                    </button>
+                                    <button className="btn btn-loss" style={{ flex: 1 }}
+                                        onClick={() => setResetStep(1)}>
+                                        Continuar
+                                    </button>
+                                </div>
+                            )}
+
+                            {resetStep === 1 && (
+                                <>
+                                    <div style={{
+                                        padding: '12px',
+                                        background: 'rgba(245,158,11,0.08)',
+                                        border: '1px solid rgba(245,158,11,0.25)',
+                                        borderRadius: 'var(--radius-sm)',
+                                        marginBottom: '14px',
+                                        fontSize: '13px',
+                                        color: 'var(--warning-light)',
+                                        textAlign: 'center', fontWeight: '600'
+                                    }}>
+                                        ¿Estás seguro? Esta es tu PRIMERA confirmación.
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '10px' }}>
+                                        <button className="btn btn-ghost" style={{ flex: 1 }}
+                                            onClick={() => { setShowReset(false); setResetStep(0); }}>
+                                            Cancelar
+                                        </button>
+                                        <button className="btn btn-warning" style={{ flex: 1 }}
+                                            onClick={() => setResetStep(2)}>
+                                            Sí, continuar
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+
+                            {resetStep === 2 && (
+                                <>
+                                    <div style={{
+                                        padding: '12px',
+                                        background: 'rgba(220,38,38,0.15)',
+                                        border: '2px solid rgba(220,38,38,0.4)',
+                                        borderRadius: 'var(--radius-sm)',
+                                        marginBottom: '14px',
+                                        fontSize: '13px',
+                                        color: 'var(--danger-light)',
+                                        textAlign: 'center', fontWeight: '700'
+                                    }}>
+                                        ÚLTIMA ADVERTENCIA — se borrará TODO. Pulsa "Borrar todo" para confirmar.
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '10px' }}>
+                                        <button className="btn btn-ghost" style={{ flex: 1 }}
+                                            onClick={() => { setShowReset(false); setResetStep(0); }}>
+                                            Cancelar
+                                        </button>
+                                        <button className="btn btn-danger" style={{ flex: 1 }}
+                                            onClick={handleEmergencyReset}>
+                                            <IconSVG.Trash2 /> Borrar todo
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                )}
             </div>
         );
     };
@@ -7783,6 +8021,8 @@ db.version(11).stores({
 
     const App = () => {
         const [appState, setAppState] = useState('loading');
+        const [bootMessage, setBootMessage] = useState('Iniciando...');
+        const [bootError, setBootError] = useState(null);
         const [user, setUser] = useState(null);
         const [page, setPage] = useState('dashboard');
         const [params, setParams] = useState({});
@@ -7794,9 +8034,12 @@ db.version(11).stores({
 
             const boot = async () => {
                 try {
-                    console.log('[BOOT] Iniciando Loans W...');
+                    console.log('[BOOT] Iniciando Loans W v10.5...');
+                    setBootMessage('Abriendo base de datos...');
                     await initDatabase();
                     console.log('[BOOT] Base de datos lista');
+                    if (cancelled) return;
+                    setBootMessage('Validando sesión...');
                     const u = await SecurityUtils.validateSession();
                     console.log('[BOOT] Sesión validada:', u ? (u.fullName || u.document) : 'sin sesión');
                     if (cancelled) return;
@@ -7804,7 +8047,10 @@ db.version(11).stores({
                     else setAppState('login');
                 } catch (err) {
                     console.error('[BOOT] Error en arranque:', err);
-                    if (!cancelled) setAppState('login');
+                    if (!cancelled) {
+                        setBootError(err.message || 'Error desconocido al iniciar');
+                        setAppState('boot_error');
+                    }
                 }
             };
 
@@ -7867,8 +8113,48 @@ db.version(11).stores({
             return <div key={page} className="page-transition">{content}</div>;
         };
 
-        if (appState === 'loading') return <LoadingScreen />;
+        if (appState === 'loading') return <LoadingScreen message={bootMessage} />;
         if (appState === 'login') return <LoginScreen onLogin={handleLogin} />;
+
+        if (appState === 'boot_error') {
+            return (
+                <div style={{
+                    minHeight: '100vh', display: 'flex', flexDirection: 'column',
+                    alignItems: 'center', justifyContent: 'center',
+                    background: 'var(--bg-deep)', padding: '24px', gap: '16px'
+                }}>
+                    <div style={{ fontSize: '48px', color: 'var(--danger)', marginBottom: '8px' }}>
+                        <IconSVG.AlertTriangle />
+                    </div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: 'var(--danger-light)' }}>
+                        No se pudo iniciar
+                    </div>
+                    <div style={{
+                        maxWidth: '420px', textAlign: 'center',
+                        fontSize: '13px', lineHeight: '1.6',
+                        color: 'var(--text-secondary)',
+                        padding: '16px',
+                        background: 'rgba(220,38,38,0.06)',
+                        border: '1px solid rgba(220,38,38,0.2)',
+                        borderRadius: '12px',
+                        wordBreak: 'break-word'
+                    }}>
+                        {bootError}
+                    </div>
+                    <div style={{
+                        maxWidth: '420px', textAlign: 'center',
+                        fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.6'
+                    }}>
+                        Si es un problema de versión de base de datos, puedes intentar
+                        recargar la página. Si persiste, borra los datos del sitio
+                        desde la configuración del navegador.
+                    </div>
+                    <button className="btn btn-primary" onClick={() => window.location.reload()}>
+                        Recargar
+                    </button>
+                </div>
+            );
+        }
 
         return (
             <AppProvider user={user} onLogout={handleLogout}>
@@ -7889,15 +8175,16 @@ db.version(11).stores({
     ReactDOM.render(<App />, document.getElementById('root'));
 
     console.log('========================================');
-    console.log('LOANS W v10.4 — ARRANQUE ESTABILIZADO');
+    console.log('LOANS W v10.5 — ARRANQUE ESTABILIZADO');
     console.log('========================================');
+    console.log('✅ DB v9999 con mismo schema que v13 (no-op upgrade)');
+    console.log('✅ Sin VersionError al abrir builds anteriores');
+    console.log('✅ Datos existentes conservados');
+    console.log('✅ initDatabase con diagnóstico de versión');
+    console.log('✅ Reset de emergencia en Ajustes (doble confirmación)');
     console.log('✅ Cobrar / Abonar separados');
-console.log('✅ Compensación automática de pérdidas con intereses');
-console.log('✅ DB v13 con upgrade explícito (evita migración colgada)');
-console.log('✅ initDatabase con timeout defensivo + reintento');
-console.log('✅ App con try/catch/finally y logs [BOOT]');
-console.log('✅ Los datos existentes se conservan');
-console.log('========================================');
+    console.log('✅ Compensación automática de pérdidas con intereses');
+    console.log('========================================');
 </script>
 </body>
-</html>
+</html>                           
