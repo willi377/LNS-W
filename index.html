@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#060610">
-    <title>LOANS W — Sistema Financiero v11.0</title>
+    <title>LOANS W — Sistema Financiero v11.2</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -477,15 +477,10 @@
 
 <script type="text/babel">
     // ======================================================
-    // LOANS W v11.0 — MAPA DEL DINERO + INTELIGENCIA FINANCIERA
-    // Corrección aplicada: React error #310 en LoanDetailPage
+    // LOANS W v11.2 — HISTORIAL FINANCIERO + BACK STACK
     // ======================================================
 
     const { useState, useEffect, useMemo, useCallback, useContext, createContext, useRef } = React;
-
-    // ============================================================
-    // 1. UTILIDADES BASE
-    // ============================================================
 
     const parseLocalDate = (dateStr) => {
         if (!dateStr) return new Date();
@@ -586,10 +581,6 @@
         return fallback;
     };
 
-    // ============================================================
-    // 1.1 NORMALIZACIÓN MONETARIA
-    // ============================================================
-
     const MONETARY_CONFIG = {
         useDecimals: false,
         decimalPlaces: 0,
@@ -622,10 +613,6 @@
             }).format(normalized);
     };
 
-    // ============================================================
-    // 1.2 HOOK CONTEO PROGRESIVO
-    // ============================================================
-
     const useCountUp = (target, duration = 900, enabled = true) => {
         const [value, setValue] = useState(enabled ? 0 : target);
         const startTimeRef = useRef(null);
@@ -657,10 +644,6 @@
         const animatedValue = useCountUp(normalizeMoney(value || 0), duration);
         return <span style={style}>{formatCurrency(animatedValue)}</span>;
     };
-
-    // ============================================================
-    // 2. ICONOS SVG
-    // ============================================================
 
     const IconSVG = {
         Home: () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
@@ -720,11 +703,8 @@
         Zap: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>,
         Target: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>,
         Flow: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="M7 12h4"/><path d="M7 8h8"/><path d="M7 16h6"/></svg>,
+        Image: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>,
     };
-
-    // ============================================================
-    // 3. MOTORES FINANCIEROS EXISTENTES
-    // ============================================================
 
     class MoraEngine {
         static calculateMoraDays(dueDate) {
@@ -1302,6 +1282,179 @@
                 recoveryPercentage: lostDebt.lostCapital > 0
                     ? normalizeMoney((recoveredCapital / lostDebt.lostCapital) * 100)
                     : 0
+            };
+        }
+    }
+
+    // ============================================================
+    // 3.0 ═══ NUEVO v11.2 — CLIENT HISTORY ENGINE ═══
+    // ============================================================
+
+    class ClientHistoryEngine {
+        static computeHistory(clientId, loans, installments, payments, options = {}) {
+            const { lostDebts = [], recoveryMovements = [] } = options;
+            const safe = (a) => Array.isArray(a) ? a.filter(x => x && typeof x === 'object') : [];
+            const allLoans = safe(loans);
+            const allInsts = safe(installments);
+            const allPays = safe(payments);
+            const allLost = safe(lostDebts);
+            const allRecoveries = safe(recoveryMovements);
+
+            const clientLoans = allLoans.filter(l => l.clientId === clientId);
+            const loanIds = new Set(clientLoans.map(l => l.id));
+
+            const clientPayments = allPays
+                .filter(p => loanIds.has(p.loanId))
+                .sort((a, b) => new Date(a.paymentDate || a.createdAt) - new Date(b.paymentDate || b.createdAt));
+
+            const totalPrestamos = clientLoans.length;
+            const pagadosCompletos = clientLoans.filter(l => l.status === 'finished').length;
+            const activos = clientLoans.filter(l => l.status === 'active').length;
+            const vencidos = clientLoans.filter(l => l.status === 'overdue').length;
+            const perdidos = clientLoans.filter(l => l.status === 'lost').length;
+            const cancelados = clientLoans.filter(l => l.status === 'cancelled').length;
+
+            const capitalPrestadoTotal = normalizeMoney(
+                clientLoans.reduce((s, l) => s + normalizeMoney(l.principal || 0), 0)
+            );
+
+            const interesPactadoTotal = normalizeMoney(
+                clientLoans.reduce((s, l) => {
+                    const tr = normalizeMoney(l.totalRepayment || 0);
+                    const pr = normalizeMoney(l.principal || 0);
+                    return s + Math.max(0, tr - pr);
+                }, 0)
+            );
+
+            let capitalRecuperadoTotal = 0;
+            let interesCobradoTotal = 0;
+            let moraCobradaTotal = 0;
+            let pagosSinDesglose = 0;
+
+            for (const p of clientPayments) {
+                const bd = p.breakdown;
+                if (!bd || (normalizeMoney(bd.capital) === 0 && normalizeMoney(bd.interest) === 0 && normalizeMoney(bd.mora) === 0)) {
+                    pagosSinDesglose += normalizeMoney(p.amount || 0);
+                    continue;
+                }
+                capitalRecuperadoTotal += normalizeMoney(bd.capital || 0);
+                interesCobradoTotal += normalizeMoney(bd.interest || 0);
+                moraCobradaTotal += normalizeMoney(bd.mora || 0);
+            }
+
+            capitalRecuperadoTotal = normalizeMoney(capitalRecuperadoTotal);
+            interesCobradoTotal = normalizeMoney(interesCobradoTotal);
+            moraCobradaTotal = normalizeMoney(moraCobradaTotal);
+            pagosSinDesglose = normalizeMoney(pagosSinDesglose);
+
+            let interesPendienteTotal = 0;
+            for (const loan of clientLoans) {
+                if (loan.status === 'cancelled') continue;
+                const pactado = Math.max(0, normalizeMoney(loan.totalRepayment || 0) - normalizeMoney(loan.principal || 0));
+                const cobrado = clientPayments
+                    .filter(p => p.loanId === loan.id)
+                    .reduce((s, p) => s + normalizeMoney(p.breakdown?.interest || 0), 0);
+                interesPendienteTotal += Math.max(0, pactado - cobrado);
+            }
+            interesPendienteTotal = normalizeMoney(interesPendienteTotal);
+
+            const saldoPendienteTotal = normalizeMoney(
+                clientLoans
+                    .filter(l => l.status === 'active' || l.status === 'overdue')
+                    .reduce((s, l) => s + normalizeMoney(l.currentBalance || 0), 0)
+            );
+
+            const fechas = clientLoans
+                .map(l => l.startDate || l.createdAt)
+                .filter(Boolean)
+                .sort();
+            const primerPrestamo = fechas[0] || null;
+            const ultimoPrestamo = fechas[fechas.length - 1] || null;
+
+            const totalPagado = normalizeMoney(
+                clientPayments.reduce((s, p) => s + normalizeMoney(p.amount || 0), 0)
+            );
+
+            const loansDetail = clientLoans
+                .sort((a, b) => new Date(b.startDate || b.createdAt) - new Date(a.startDate || a.createdAt))
+                .map(loan => {
+                    const loanPayments = clientPayments.filter(p => p.loanId === loan.id);
+                    const loanInsts = allInsts
+                        .filter(i => i.loanId === loan.id)
+                        .sort((a, b) => a.number - b.number);
+
+                    const principal = normalizeMoney(loan.principal || 0);
+                    const totalRepayment = normalizeMoney(loan.totalRepayment || 0);
+                    const pactadoInteres = Math.max(0, totalRepayment - principal);
+
+                    let capRec = 0, intCob = 0, moraCob = 0;
+                    for (const p of loanPayments) {
+                        const bd = p.breakdown || {};
+                        capRec += normalizeMoney(bd.capital || 0);
+                        intCob += normalizeMoney(bd.interest || 0);
+                        moraCob += normalizeMoney(bd.mora || 0);
+                    }
+
+                    const intPendiente = loan.status === 'cancelled'
+                        ? 0
+                        : Math.max(0, pactadoInteres - intCob);
+
+                    const saldoPendiente = normalizeMoney(loan.currentBalance || 0);
+
+                    const lostDebt = allLost.find(d => d.loanId === loan.id);
+                    let recuperadoDePerdida = 0;
+                    if (lostDebt) {
+                        const recDir = allRecoveries
+                            .filter(r => r.lostDebtId === lostDebt.id)
+                            .reduce((s, r) => s + normalizeMoney(r.capitalRecovered || r.amount || 0), 0);
+                        recuperadoDePerdida = normalizeMoney(recDir);
+                    }
+
+                    return {
+                        loanId: loan.id,
+                        loanNumber: loan.loanNumber,
+                        startDate: loan.startDate,
+                        createdAt: loan.createdAt,
+                        principal,
+                        interestType: loan.interestType,
+                        interestRate: normalizeMoney(loan.interestRate || 0),
+                        installmentsCount: loan.installmentsCount,
+                        frequency: loan.frequency,
+                        totalRepayment,
+                        pactadoInteres,
+                        capRec: normalizeMoney(capRec),
+                        intCob: normalizeMoney(intCob),
+                        moraCob: normalizeMoney(moraCob),
+                        intPendiente: normalizeMoney(intPendiente),
+                        saldoPendiente,
+                        status: loan.status,
+                        lostDebtId: lostDebt?.id || null,
+                        recuperadoDePerdida: normalizeMoney(recuperadoDePerdida),
+                        payments: loanPayments,
+                        installments: loanInsts
+                    };
+                });
+
+            return {
+                totalPrestamos,
+                pagadosCompletos,
+                activos,
+                vencidos,
+                perdidos,
+                cancelados,
+                capitalPrestadoTotal,
+                interesPactadoTotal,
+                capitalRecuperadoTotal,
+                interesCobradoTotal,
+                moraCobradaTotal,
+                interesPendienteTotal,
+                saldoPendienteTotal,
+                totalPagado,
+                pagosSinDesglose,
+                primerPrestamo,
+                ultimoPrestamo,
+                loansDetail,
+                paymentsCount: clientPayments.length
             };
         }
     }
@@ -2216,7 +2369,7 @@
     };
 
     // CONTINÚA EN PARTE 2 DE 3
- // ============================================================
+// ============================================================
     // 6. APP CONTEXT
     // ============================================================
 
@@ -2240,6 +2393,10 @@
         const [toasts, setToasts] = useState([]);
         const [loading, setLoading] = useState(true);
         const [refreshKey, setRefreshKey] = useState(0);
+
+        // ═══ v11.2 — Estados persistidos para preservar filtros entre navegaciones ═══
+        const [clientsSearch, setClientsSearch] = useState('');
+        const [loansFilter, setLoansFilter] = useState('all');
 
         const addToast = useCallback((msg, type = 'info') => {
             const id = Date.now() + Math.random();
@@ -2457,11 +2614,14 @@
             lostDebts, setLostDebts, recoveryMovements, setRecoveryMovements,
             lossCompensations, setLossCompensations,
             config, setConfig, toasts, addToast, loading, refreshKey,
-            refreshAllData, addAuditLog, db
+            refreshAllData, addAuditLog, db,
+            clientsSearch, setClientsSearch,
+            loansFilter, setLoansFilter
         }), [user, onLogout, clients, loans, installments, payments, expenses,
             capitalMovements, expenseCategories, collectionPeriods, auditLogs, notes,
             lostDebts, recoveryMovements, lossCompensations,
-            config, toasts, addToast, loading, refreshKey, refreshAllData, addAuditLog
+            config, toasts, addToast, loading, refreshKey, refreshAllData, addAuditLog,
+            clientsSearch, loansFilter
         ]);
 
         return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
@@ -2814,10 +2974,634 @@
     };
 
     // ============================================================
+    // 9.5 COMPONENT: RECEIPT GENERATOR
+    // ============================================================
+
+    const ReceiptGenerator = ({ type, payload, onClose }) => {
+        const [imageUrl, setImageUrl] = useState(null);
+        const [imageBlob, setImageBlob] = useState(null);
+        const [generating, setGenerating] = useState(true);
+        const [error, setError] = useState(null);
+        const [canShareFiles, setCanShareFiles] = useState(false);
+        const { addToast } = useApp();
+
+        const W = 1080;
+        const H = 1350;
+
+        const drawRoundedRect = (ctx, x, y, w, h, r) => {
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.lineTo(x + w - r, y);
+            ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+            ctx.lineTo(x + w, y + h - r);
+            ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+            ctx.lineTo(x + r, y + h);
+            ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+            ctx.lineTo(x, y + r);
+            ctx.quadraticCurveTo(x, y, x + r, y);
+            ctx.closePath();
+        };
+
+        const wrapText = (ctx, text, maxWidth) => {
+            const words = String(text || '').split(/\s+/);
+            const lines = [];
+            let current = '';
+            for (const word of words) {
+                const test = current ? current + ' ' + word : word;
+                if (ctx.measureText(test).width > maxWidth && current) {
+                    lines.push(current);
+                    current = word;
+                } else {
+                    current = test;
+                }
+            }
+            if (current) lines.push(current);
+            return lines;
+        };
+
+        const formatMoneyCanvas = (value) => {
+            const n = normalizeMoney(value || 0);
+            return '$ ' + new Intl.NumberFormat('es-CO', {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+            }).format(n);
+        };
+
+        const drawRow = (ctx, label, value, y, opts = {}) => {
+            const labelColor = opts.labelColor || '#64748b';
+            const valueColor = opts.valueColor || '#0f172a';
+            const valueSize = opts.valueSize || 28;
+
+            ctx.textAlign = 'left';
+            ctx.fillStyle = labelColor;
+            ctx.font = '500 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText(label, 130, y);
+
+            ctx.textAlign = 'right';
+            ctx.fillStyle = valueColor;
+            ctx.font = `700 ${valueSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+            ctx.fillText(value, 950, y);
+        };
+
+        const drawCollectionReceipt = (ctx) => {
+            const {
+                clientName, loanNumber, installmentNumber,
+                totalAmount, paidAmount, remainingAmount,
+                moraRemaining, dueDate, daysLate, generatedAt, lenderName
+            } = payload;
+
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(0, 0, W, H);
+
+            const grad = ctx.createLinearGradient(0, 0, W, 240);
+            grad.addColorStop(0, '#6366f1');
+            grad.addColorStop(1, '#4f46e5');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, W, 240);
+
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '800 68px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText('LOANS W', W / 2, 118);
+
+            ctx.font = '500 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillStyle = 'rgba(255,255,255,0.85)';
+            ctx.fillText('Sistema Financiero', W / 2, 160);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '800 46px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText('RECORDATORIO DE PAGO', W / 2, 214);
+
+            ctx.save();
+            ctx.shadowColor = 'rgba(15,23,42,0.08)';
+            ctx.shadowBlur = 32;
+            ctx.shadowOffsetY = 12;
+            ctx.fillStyle = '#ffffff';
+            drawRoundedRect(ctx, 70, 290, 940, 980, 36);
+            ctx.fill();
+            ctx.restore();
+
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#64748b';
+            ctx.font = '600 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText('CLIENTE', W / 2, 370);
+
+            ctx.fillStyle = '#0f172a';
+            ctx.font = '700 40px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            const nameLines = wrapText(ctx, clientName || 'Cliente', 800);
+            let nameY = 420;
+            for (const line of nameLines.slice(0, 2)) {
+                ctx.fillText(line, W / 2, nameY);
+                nameY += 50;
+            }
+
+            const valorPendiente = normalizeMoney(remainingAmount + moraRemaining);
+
+            ctx.save();
+            const boxGrad = ctx.createLinearGradient(130, 0, 950, 0);
+            boxGrad.addColorStop(0, 'rgba(99,102,241,0.10)');
+            boxGrad.addColorStop(1, 'rgba(99,102,241,0.02)');
+            ctx.fillStyle = boxGrad;
+            drawRoundedRect(ctx, 130, nameY + 30, 820, 200, 28);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(99,102,241,0.25)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.restore();
+
+            ctx.fillStyle = '#64748b';
+            ctx.font = '600 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText('VALOR PENDIENTE', W / 2, nameY + 90);
+
+            ctx.fillStyle = '#6366f1';
+            ctx.font = '800 86px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText(formatMoneyCanvas(valorPendiente), W / 2, nameY + 185);
+
+            let y = nameY + 320;
+
+            drawRow(ctx, 'Préstamo', `#${loanNumber || 'N/A'}`, y);
+            y += 62;
+            drawRow(ctx, 'Cuota', `#${installmentNumber}`, y);
+            y += 62;
+            drawRow(ctx, 'Valor original', formatMoneyCanvas(totalAmount), y, { valueColor: '#475569' });
+
+            if (normalizeMoney(paidAmount) > 0) {
+                y += 62;
+                drawRow(ctx, 'Abonos realizados', '-' + formatMoneyCanvas(paidAmount), y, {
+                    valueColor: '#059669'
+                });
+            }
+
+            if (normalizeMoney(moraRemaining) > 0) {
+                y += 62;
+                drawRow(ctx, 'Mora acumulada', formatMoneyCanvas(moraRemaining), y, {
+                    valueColor: '#ef4444'
+                });
+            }
+
+            y += 62;
+            drawRow(ctx, 'Vence', formatDate(dueDate), y, { valueColor: '#0f172a' });
+
+            if (daysLate > 0) {
+                y += 62;
+                drawRow(ctx, 'Días de mora', String(daysLate), y, {
+                    valueColor: '#ef4444'
+                });
+            }
+
+            y += 80;
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#475569';
+            ctx.font = '400 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            const msg = `Hola, ${clientName || 'cliente'}. Te compartimos el recordatorio de tu cuota pendiente. Si ya realizaste el pago, por favor haz caso omiso a este mensaje.`;
+            const msgLines = wrapText(ctx, msg, 820);
+            let msgY = y;
+            for (const line of msgLines) {
+                ctx.fillText(line, W / 2, msgY);
+                msgY += 34;
+            }
+
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '500 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText(`Generado el ${formatDate(generatedAt)}`, W / 2, 1250);
+
+            if (lenderName) {
+                ctx.font = '600 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+                ctx.fillStyle = '#64748b';
+                ctx.fillText(lenderName, W / 2, 1290);
+            }
+
+            ctx.fillStyle = '#6366f1';
+            ctx.fillRect(0, H - 24, W, 24);
+        };
+
+        const drawPaymentReceipt = (ctx) => {
+            const {
+                clientName, loanNumber, installmentNumber, receiptNumber,
+                paymentDate, amount, method, breakdown,
+                remainingAfterInstallment, remainingAfterLoan,
+                isFullInstallmentPayment, isFullLoanPayment, lenderName
+            } = payload;
+
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(0, 0, W, H);
+
+            const grad = ctx.createLinearGradient(0, 0, W, 240);
+            grad.addColorStop(0, '#10b981');
+            grad.addColorStop(1, '#059669');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, W, 240);
+
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '800 68px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText('LOANS W', W / 2, 118);
+
+            ctx.font = '500 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillStyle = 'rgba(255,255,255,0.85)';
+            ctx.fillText('Comprobante Oficial', W / 2, 160);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '800 46px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText('COMPROBANTE DE PAGO', W / 2, 214);
+
+            ctx.save();
+            ctx.shadowColor = 'rgba(15,23,42,0.08)';
+            ctx.shadowBlur = 32;
+            ctx.shadowOffsetY = 12;
+            ctx.fillStyle = '#ffffff';
+            drawRoundedRect(ctx, 70, 290, 940, 1000, 36);
+            ctx.fill();
+            ctx.restore();
+
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#64748b';
+            ctx.font = '600 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText('N° DE COMPROBANTE', W / 2, 360);
+
+            ctx.fillStyle = '#0f172a';
+            ctx.font = '700 30px "SF Mono", Monaco, Consolas, monospace';
+            ctx.fillText(receiptNumber || 'N/A', W / 2, 402);
+
+            let statusText = 'ABONO REGISTRADO';
+            let statusColor = '#f59e0b';
+            if (isFullLoanPayment) {
+                statusText = 'PRÉSTAMO CANCELADO';
+                statusColor = '#6366f1';
+            } else if (isFullInstallmentPayment) {
+                statusText = 'CUOTA PAGADA';
+                statusColor = '#10b981';
+            }
+
+            ctx.fillStyle = statusColor + '20';
+            drawRoundedRect(ctx, W / 2 - 220, 440, 440, 70, 35);
+            ctx.fill();
+            ctx.strokeStyle = statusColor + '60';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.fillStyle = statusColor;
+            ctx.font = '700 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText(statusText, W / 2, 484);
+
+            ctx.save();
+            const boxGrad = ctx.createLinearGradient(130, 0, 950, 0);
+            boxGrad.addColorStop(0, 'rgba(16,185,129,0.10)');
+            boxGrad.addColorStop(1, 'rgba(16,185,129,0.02)');
+            ctx.fillStyle = boxGrad;
+            drawRoundedRect(ctx, 130, 550, 820, 200, 28);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(16,185,129,0.25)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.restore();
+
+            ctx.fillStyle = '#64748b';
+            ctx.font = '600 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText('VALOR RECIBIDO', W / 2, 610);
+
+            ctx.fillStyle = '#10b981';
+            ctx.font = '800 86px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText(formatMoneyCanvas(amount), W / 2, 705);
+
+            let y = 830;
+
+            drawRow(ctx, 'Cliente', clientName || 'Cliente', y, { valueSize: 26 });
+            y += 58;
+            drawRow(ctx, 'Préstamo', `#${loanNumber || 'N/A'}`, y);
+            if (installmentNumber) {
+                y += 58;
+                drawRow(ctx, 'Cuota', `#${installmentNumber}`, y);
+            }
+            y += 58;
+            drawRow(ctx, 'Fecha', formatDateTime(paymentDate), y, { valueSize: 22 });
+            y += 58;
+            drawRow(ctx, 'Método', method || 'N/A', y, { valueSize: 26 });
+
+            if (breakdown) {
+                y += 58;
+                drawRow(ctx, 'Capital', formatMoneyCanvas(breakdown.capital), y, {
+                    valueColor: '#6366f1'
+                });
+                y += 58;
+                drawRow(ctx, 'Intereses', formatMoneyCanvas(breakdown.interest), y, {
+                    valueColor: '#f59e0b'
+                });
+                if (normalizeMoney(breakdown.mora) > 0) {
+                    y += 58;
+                    drawRow(ctx, 'Mora', formatMoneyCanvas(breakdown.mora), y, {
+                        valueColor: '#ef4444'
+                    });
+                }
+            }
+
+            y += 62;
+            if (isFullInstallmentPayment || isFullLoanPayment) {
+                drawRow(ctx, 'Saldo cuota', formatMoneyCanvas(0), y, {
+                    valueColor: '#10b981'
+                });
+            } else {
+                drawRow(ctx, 'Falta por pagar cuota', formatMoneyCanvas(remainingAfterInstallment), y, {
+                    valueColor: '#f59e0b'
+                });
+            }
+
+            if (remainingAfterLoan !== undefined && remainingAfterLoan !== null) {
+                y += 58;
+                drawRow(ctx, 'Saldo préstamo', formatMoneyCanvas(remainingAfterLoan), y, {
+                    valueColor: isFullLoanPayment ? '#10b981' : '#475569'
+                });
+            }
+
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#475569';
+            ctx.font = '400 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            const msg = 'Gracias por tu pago. Conserva este comprobante como soporte de tu transacción.';
+            const msgLines = wrapText(ctx, msg, 820);
+            let msgY = 1210;
+            for (const line of msgLines) {
+                ctx.fillText(line, W / 2, msgY);
+                msgY += 34;
+            }
+
+            if (lenderName) {
+                ctx.font = '600 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+                ctx.fillStyle = '#64748b';
+                ctx.fillText(lenderName, W / 2, 1300);
+            }
+
+            ctx.fillStyle = '#10b981';
+            ctx.fillRect(0, H - 24, W, 24);
+        };
+
+        useEffect(() => {
+            let cancelled = false;
+
+            const generate = async () => {
+                try {
+                    setGenerating(true);
+                    setError(null);
+
+                    const canvas = document.createElement('canvas');
+                    canvas.width = W;
+                    canvas.height = H;
+                    const ctx = canvas.getContext('2d');
+
+                    if (type === 'collection') {
+                        drawCollectionReceipt(ctx);
+                    } else if (type === 'payment') {
+                        drawPaymentReceipt(ctx);
+                    } else {
+                        throw new Error('Tipo de recibo no reconocido');
+                    }
+
+                    const dataUrl = canvas.toDataURL('image/png');
+                    const blob = await new Promise((resolve, reject) => {
+                        canvas.toBlob(b => b ? resolve(b) : reject(new Error('No se pudo convertir el canvas a PNG')), 'image/png');
+                    });
+
+                    if (cancelled) return;
+
+                    setImageUrl(dataUrl);
+                    setImageBlob(blob);
+
+                    try {
+                        const testFile = new File([blob], 'test.png', { type: 'image/png' });
+                        if (navigator.canShare && navigator.canShare({ files: [testFile] })) {
+                            setCanShareFiles(true);
+                        } else {
+                            setCanShareFiles(false);
+                        }
+                    } catch {
+                        setCanShareFiles(false);
+                    }
+                } catch (err) {
+                    console.error('[RECEIPT GENERATOR] Error:', err);
+                    if (!cancelled) {
+                        setError(err.message || 'No se pudo generar la imagen');
+                    }
+                }
+                if (!cancelled) setGenerating(false);
+            };
+
+            generate();
+            return () => { cancelled = true; };
+        }, [type, payload]);
+
+        const handleDownload = () => {
+            if (!imageUrl) return;
+            try {
+                const link = document.createElement('a');
+                link.href = imageUrl;
+                const fileName = type === 'collection'
+                    ? `recordatorio-cobro-${payload.installmentNumber}-${Date.now()}.png`
+                    : `comprobante-pago-${String(payload.receiptNumber || 'pago').replace(/[^a-zA-Z0-9-]/g, '')}.png`;
+                link.download = fileName;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                addToast('Imagen descargada', 'success');
+            } catch (err) {
+                console.error('[DOWNLOAD ERROR]', err);
+                addToast('No se pudo descargar. Mantén presionada la imagen para guardarla.', 'error');
+            }
+        };
+
+        const handleShare = async () => {
+            if (!imageBlob) return;
+
+            if (!canShareFiles) {
+                addToast('Este navegador no permite compartir directamente. Se descargó la imagen.', 'warning');
+                handleDownload();
+                return;
+            }
+
+            try {
+                const fileName = type === 'collection'
+                    ? `recordatorio-cobro-${payload.installmentNumber}.png`
+                    : `comprobante-pago-${String(payload.receiptNumber || 'pago').replace(/[^a-zA-Z0-9-]/g, '')}.png`;
+                const file = new File([imageBlob], fileName, { type: 'image/png' });
+                await navigator.share({
+                    files: [file],
+                    title: type === 'collection' ? 'Recordatorio de pago' : 'Comprobante de pago',
+                    text: type === 'collection'
+                        ? `Recordatorio de cuota - ${payload.clientName}`
+                        : `Comprobante de pago - ${payload.clientName}`
+                });
+            } catch (err) {
+                if (err?.name === 'AbortError') return;
+                console.error('[SHARE ERROR]', err);
+                addToast('No se pudo compartir. Intenta descargar la imagen.', 'error');
+            }
+        };
+
+        return (
+            <div className="modal-overlay" onClick={onClose}>
+                <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '720px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                        <div>
+                            <div style={{ fontSize: '18px', fontWeight: '700' }}>
+                                {type === 'collection' ? 'Recordatorio de cobro' : 'Comprobante de pago'}
+                            </div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                {type === 'collection'
+                                    ? 'Solo lectura. No modifica la cuota.'
+                                    : 'Solo lectura. No registra un nuevo pago.'}
+                            </div>
+                        </div>
+                        <button onClick={onClose} className="btn btn-ghost btn-sm">
+                            <IconSVG.X />
+                        </button>
+                    </div>
+
+                    {generating && (
+                        <div style={{
+                            padding: '60px 20px',
+                            display: 'flex', flexDirection: 'column',
+                            alignItems: 'center', gap: '14px'
+                        }}>
+                            <div className="spinner spinner-lg"></div>
+                            <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                                Generando imagen...
+                            </div>
+                        </div>
+                    )}
+
+                    {!generating && error && (
+                        <div style={{
+                            padding: '20px', textAlign: 'center',
+                            background: 'rgba(239,68,68,0.08)',
+                            border: '1px solid rgba(239,68,68,0.2)',
+                            borderRadius: 'var(--radius-md)',
+                            color: 'var(--danger-light)',
+                            fontSize: '13px'
+                        }}>
+                            <div style={{ fontWeight: '600', marginBottom: '6px' }}>
+                                No se pudo generar la imagen
+                            </div>
+                            <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                                {error}
+                            </div>
+                            <button className="btn btn-ghost btn-sm" style={{ marginTop: '12px' }} onClick={onClose}>
+                                Cerrar
+                            </button>
+                        </div>
+                    )}
+
+                    {!generating && imageUrl && (
+                        <>
+                            <div style={{
+                                background: 'var(--bg-primary)',
+                                border: '1px solid var(--glass-border)',
+                                borderRadius: 'var(--radius-lg)',
+                                padding: '12px',
+                                display: 'flex',
+                                justifyContent: 'center',
+                                marginBottom: '14px'
+                            }}>
+                                <img
+                                    src={imageUrl}
+                                    alt={type === 'collection' ? 'Recordatorio de cobro' : 'Comprobante de pago'}
+                                    style={{
+                                        width: '100%',
+                                        maxWidth: '500px',
+                                        height: 'auto',
+                                        borderRadius: 'var(--radius-md)',
+                                        display: 'block'
+                                    }}
+                                />
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                <button className="btn btn-primary" style={{ flex: 1, minWidth: '140px' }} onClick={handleDownload}>
+                                    <IconSVG.Download /> Descargar PNG
+                                </button>
+                                <button className="btn btn-success" style={{ flex: 1, minWidth: '140px' }} onClick={handleShare}>
+                                    <IconSVG.Share2 /> Compartir
+                                </button>
+                                <button className="btn btn-ghost" style={{ flex: 1, minWidth: '100px' }} onClick={onClose}>
+                                    Volver
+                                </button>
+                            </div>
+
+                            {!canShareFiles && (
+                                <div style={{
+                                    marginTop: '10px',
+                                    padding: '10px 12px',
+                                    background: 'rgba(245,158,11,0.06)',
+                                    border: '1px solid rgba(245,158,11,0.2)',
+                                    borderRadius: 'var(--radius-sm)',
+                                    fontSize: '11px',
+                                    color: 'var(--text-secondary)',
+                                    lineHeight: '1.5'
+                                }}>
+                                    Este navegador no permite compartir archivos directamente. Usa "Descargar PNG" y adjunta la imagen desde WhatsApp.
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
+            </div>
+        );
+    };
+
+    const buildCollectionPayload = ({ installment, loan, client }) => {
+        const moraRemaining = MoraEngine.calculateMoraRemaining(installment);
+        const daysLate = MoraEngine.calculateMoraDays(installment.dueDate);
+        return {
+            clientName: client?.fullName || 'Cliente',
+            loanNumber: loan?.loanNumber || 'N/A',
+            installmentNumber: installment.number,
+            totalAmount: normalizeMoney(installment.totalAmount || 0),
+            paidAmount: normalizeMoney(installment.paidAmount || 0),
+            remainingAmount: normalizeMoney(installment.remainingAmount || installment.totalAmount || 0),
+            moraRemaining: normalizeMoney(moraRemaining),
+            dueDate: installment.dueDate,
+            daysLate: daysLate > 0 ? daysLate : 0,
+            generatedAt: new Date().toISOString(),
+            lenderName: ''
+        };
+    };
+
+    const buildPaymentPayload = ({ payment, loan, client, installment }) => {
+        const remainingAfterInstallment = installment
+            ? normalizeMoney(installment.remainingAmount || 0)
+            : null;
+
+        const remainingAfterLoan = loan
+            ? normalizeMoney(loan.currentBalance || 0)
+            : null;
+
+        const isFullInstallmentPayment = installment
+            ? (installment.status === 'paid' || normalizeMoney(remainingAfterInstallment) <= 0.01)
+            : false;
+
+        const isFullLoanPayment = loan
+            ? (loan.status === 'finished' || normalizeMoney(remainingAfterLoan) <= 0.01)
+            : false;
+
+        return {
+            clientName: client?.fullName || 'Cliente',
+            loanNumber: loan?.loanNumber || 'N/A',
+            installmentNumber: installment?.number || null,
+            receiptNumber: payment.receiptNumber || `REC-${payment.id || Date.now()}`,
+            paymentDate: payment.paymentDate || payment.createdAt,
+            amount: normalizeMoney(payment.amount || 0),
+            method: payment.method || 'Efectivo',
+            breakdown: payment.breakdown || { capital: 0, interest: 0, mora: 0 },
+            remainingAfterInstallment,
+            remainingAfterLoan,
+            isFullInstallmentPayment,
+            isFullLoanPayment,
+            lenderName: ''
+        };
+    };
+
+    // ============================================================
     // 10. COMPONENT: PAYMENT HISTORY
     // ============================================================
 
-    const PaymentHistory = ({ payments, installments, loans, clients, onEdit, onDelete, onViewReceipt }) => {
+    const PaymentHistory = ({ payments, installments, loans, clients, onEdit, onDelete, onViewReceipt, onGeneratePng }) => {
         const [expanded, setExpanded] = useState(null);
 
         if (!payments || payments.length === 0) {
@@ -2903,6 +3687,9 @@
                                         )}
 
                                         <div style={{ display: 'flex', gap: '6px', marginTop: '10px', flexWrap: 'wrap' }}>
+                                            <button className="btn btn-ghost btn-xs" onClick={(e) => { e.stopPropagation(); onGeneratePng && onGeneratePng(payment); }}>
+                                                <IconSVG.Image /> Comprobante PNG
+                                            </button>
                                             <button className="btn btn-ghost btn-xs" onClick={(e) => { e.stopPropagation(); onViewReceipt(payment); }}>
                                                 <IconSVG.FileText /> Recibo
                                             </button>
@@ -2941,6 +3728,7 @@
         const [error, setError] = useState('');
         const [step, setStep] = useState('form');
         const [result, setResult] = useState(null);
+        const [showPng, setShowPng] = useState(false);
 
         const remainingCapital = normalizeMoney(installment?.remainingAmount || installment?.totalAmount || 0);
         const remainingMora = installment ? normalizeMoney(MoraEngine.calculateMoraRemaining(installment)) : 0;
@@ -2955,6 +3743,7 @@
                 setNote('');
                 setError('');
                 setResult(null);
+                setShowPng(false);
             }
         }, [isOpen, totalDue]);
 
@@ -3425,6 +4214,13 @@
                             }}>
                                 Cobro registrado correctamente
                             </div>
+
+                            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                                <button className="btn btn-success" style={{ flex: 1 }} onClick={() => setShowPng(true)}>
+                                    <IconSVG.Image /> Generar comprobante PNG
+                                </button>
+                            </div>
+
                             <PaymentReceipt
                                 payment={{
                                     ...result,
@@ -3435,6 +4231,33 @@
                                 onClose={onClose}
                             />
                         </>
+                    )}
+
+                    {showPng && result && (
+                        <ReceiptGenerator
+                            type="payment"
+                            payload={buildPaymentPayload({
+                                payment: {
+                                    receiptNumber: result.receiptNumber,
+                                    paymentDate: result.date,
+                                    amount: result.receivedAmount,
+                                    method: result.method,
+                                    breakdown: result.allocation
+                                },
+                                loan: {
+                                    loanNumber: loan.loanNumber,
+                                    currentBalance: result.after?.total || 0,
+                                    status: (result.after?.total || 0) <= 0.01 ? 'finished' : loan.status
+                                },
+                                client: client,
+                                installment: {
+                                    number: installment.number,
+                                    remainingAmount: result.after?.total || 0,
+                                    status: result.isFullPayment ? 'paid' : 'partial'
+                                }
+                            })}
+                            onClose={() => setShowPng(false)}
+                        />
                     )}
                 </div>
             </div>
@@ -3461,6 +4284,7 @@
         const [error, setError] = useState('');
         const [previewResult, setPreviewResult] = useState(null);
         const [receiptData, setReceiptData] = useState(null);
+        const [showPng, setShowPng] = useState(false);
 
         const remainingCapital = normalizeMoney(installment?.remainingAmount || installment?.totalAmount || 0);
         const remainingMora = installment ? normalizeMoney(MoraEngine.calculateMoraRemaining(installment)) : 0;
@@ -3479,6 +4303,7 @@
                 setError('');
                 setPreviewResult(null);
                 setReceiptData(null);
+                setShowPng(false);
             }
         }, [isOpen, existingPayment]);
 
@@ -4005,6 +4830,12 @@
                                 Abono registrado y distribuido
                             </div>
 
+                            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                                <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => setShowPng(true)}>
+                                    <IconSVG.Image /> Generar comprobante PNG
+                                </button>
+                            </div>
+
                             <div style={{
                                 background: 'var(--bg-primary)',
                                 border: '1px solid var(--glass-border)',
@@ -4067,6 +4898,25 @@
                                 </button>
                             </div>
                         </>
+                    )}
+
+                    {showPng && receiptData && (
+                        <ReceiptGenerator
+                            type="payment"
+                            payload={buildPaymentPayload({
+                                payment: {
+                                    receiptNumber: receiptData.receiptNumber,
+                                    paymentDate: receiptData.date,
+                                    amount: receiptData.receivedAmount,
+                                    method: receiptData.method,
+                                    breakdown: receiptData.allocation
+                                },
+                                loan: loan,
+                                client: client,
+                                installment: installment
+                            })}
+                            onClose={() => setShowPng(false)}
+                        />
                     )}
                 </div>
             </div>
@@ -4586,11 +5436,11 @@
     };
 
     // CONTINÚA EN PARTE 3 DE 3
-// ============================================================
+ // ============================================================
     // 16. COMPONENT: LOST DEBTS PAGE
     // ============================================================
 
-    const LostDebtsPage = ({ onNavigate }) => {
+    const LostDebtsPage = ({ onNavigate, onBack }) => {
         const { lostDebts, recoveryMovements, lossCompensations, loans, clients, loading, refreshKey } = useApp();
         const [filter, setFilter] = useState('all');
         const [recoveryTarget, setRecoveryTarget] = useState(null);
@@ -4666,8 +5516,8 @@
 
         return (
             <div style={{ padding: '20px', paddingBottom: '120px' }}>
-                <button onClick={() => onNavigate('finance')} className="back-btn">
-                    <IconSVG.ArrowLeft /> Volver a Finanzas
+                <button onClick={onBack} className="back-btn">
+                    <IconSVG.ArrowLeft /> Volver
                 </button>
 
                 <div style={{ marginBottom: '14px' }}>
@@ -5322,7 +6172,7 @@
     // 19. COMPONENT: DASHBOARD PAGE
     // ============================================================
 
-    const DashboardPage = ({ onNavigate }) => {
+    const DashboardPage = ({ onNavigate, onBack }) => {
         const {
             loans, installments, payments, expenses, capitalMovements,
             clients, lostDebts, recoveryMovements, lossCompensations, loading, refreshKey
@@ -5706,9 +6556,10 @@
     // 19.1 COMPONENT: CLIENTS PAGE
     // ============================================================
 
-    const ClientsPage = ({ onNavigate }) => {
-        const { clients, loans, refreshAllData, addToast, user, loading } = useApp();
-        const [search, setSearch] = useState('');
+    const ClientsPage = ({ onNavigate, onBack }) => {
+        const { clients, loans, refreshAllData, addToast, user, loading, clientsSearch, setClientsSearch } = useApp();
+        const search = clientsSearch;
+        const setSearch = setClientsSearch;
         const [showForm, setShowForm] = useState(false);
         const [editing, setEditing] = useState(null);
 
@@ -5905,10 +6756,376 @@
     };
 
     // ============================================================
+    // 19.15 ═══ NUEVO v11.2 — HISTORIAL FINANCIERO POR CLIENTE ═══
+    // ============================================================
+
+    const ClientFinancialHistory = ({ clientId, onNavigate }) => {
+        const {
+            loans, installments, payments, lostDebts, recoveryMovements, refreshKey
+        } = useApp();
+
+        const [expandedLoanId, setExpandedLoanId] = useState(null);
+        const [showIndicators, setShowIndicators] = useState(true);
+
+        const history = useMemo(() => {
+            return ClientHistoryEngine.computeHistory(
+                clientId,
+                loans || [],
+                installments || [],
+                payments || [],
+                { lostDebts: lostDebts || [], recoveryMovements: recoveryMovements || [] }
+            );
+        }, [clientId, loans, installments, payments, lostDebts, recoveryMovements, refreshKey]);
+
+        const formatTypeLabel = (type) => {
+            switch (type) {
+                case 'on_principal': return 'Sobre capital';
+                case 'fixed_per_installment': return 'Fijo por cuota';
+                case 'no_interest': return 'Sin interés';
+                default: return type || 'No definido';
+            }
+        };
+
+        const formatFreq = (f) => {
+            switch (f) {
+                case 'daily': return 'Diaria';
+                case 'weekly': return 'Semanal';
+                case 'biweekly': return 'Quincenal';
+                case 'monthly': return 'Mensual';
+                default: return f || '';
+            }
+        };
+
+        const noLoans = history.loansDetail.length === 0;
+
+        return (
+            <div style={{ marginTop: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <div style={{ fontSize: '16px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ color: 'var(--accent-light)' }}><IconSVG.ChartBar /></span>
+                        Historial financiero
+                    </div>
+                    <button className="btn btn-ghost btn-xs"
+                        onClick={() => setShowIndicators(!showIndicators)}
+                        style={{ padding: '6px 10px' }}>
+                        {showIndicators ? 'Ocultar' : 'Mostrar'}
+                    </button>
+                </div>
+
+                {noLoans ? (
+                    <EmptyState icon={<IconSVG.Briefcase />}
+                        title="Sin historial financiero"
+                        description="Este cliente aún no tiene préstamos registrados" />
+                ) : (
+                    <>
+                        {showIndicators && (
+                            <>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                                    <div className="glass-card disabled" style={{ padding: '12px' }}>
+                                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                                            Total préstamos
+                                        </div>
+                                        <div style={{ fontSize: '20px', fontWeight: '700', marginTop: '4px' }}>
+                                            {history.totalPrestamos}
+                                        </div>
+                                    </div>
+                                    <div className="glass-card disabled" style={{ padding: '12px' }}>
+                                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                                            Pagados completos
+                                        </div>
+                                        <div style={{ fontSize: '20px', fontWeight: '700', color: 'var(--success)', marginTop: '4px' }}>
+                                            {history.pagadosCompletos}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '14px' }}>
+                                    <div className="glass-card disabled" style={{ padding: '10px', textAlign: 'center' }}>
+                                        <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Activos</div>
+                                        <div style={{ fontSize: '16px', fontWeight: '700', color: 'var(--accent-light)' }}>
+                                            {history.activos}
+                                        </div>
+                                    </div>
+                                    <div className="glass-card disabled" style={{ padding: '10px', textAlign: 'center' }}>
+                                        <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Vencidos</div>
+                                        <div style={{ fontSize: '16px', fontWeight: '700', color: 'var(--danger)' }}>
+                                            {history.vencidos}
+                                        </div>
+                                    </div>
+                                    <div className="glass-card disabled" style={{ padding: '10px', textAlign: 'center' }}>
+                                        <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Perdidos</div>
+                                        <div style={{ fontSize: '16px', fontWeight: '700', color: 'var(--loss)' }}>
+                                            {history.perdidos}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="glass-card disabled" style={{ padding: '14px', marginBottom: '8px' }}>
+                                    <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--accent-light)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                        Capital
+                                    </div>
+                                    <div className="financial-detail-row">
+                                        <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Capital prestado histórico</span>
+                                        <span style={{ fontWeight: '600' }}>{formatCurrency(history.capitalPrestadoTotal)}</span>
+                                    </div>
+                                    <div className="financial-detail-row">
+                                        <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Capital recuperado</span>
+                                        <span style={{ fontWeight: '600', color: 'var(--success)' }}>
+                                            {formatCurrency(history.capitalRecuperadoTotal)}
+                                        </span>
+                                    </div>
+                                    <div className="financial-detail-row">
+                                        <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Saldo pendiente</span>
+                                        <span style={{ fontWeight: '600', color: 'var(--warning)' }}>
+                                            {formatCurrency(history.saldoPendienteTotal)}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className="glass-card disabled" style={{ padding: '14px', marginBottom: '8px' }}>
+                                    <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--warning)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                        Intereses
+                                    </div>
+                                    <div className="financial-detail-row">
+                                        <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Pactados (esperados)</span>
+                                        <span style={{ fontWeight: '600' }}>{formatCurrency(history.interesPactadoTotal)}</span>
+                                    </div>
+                                    <div className="financial-detail-row">
+                                        <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Cobrados</span>
+                                        <span style={{ fontWeight: '600', color: 'var(--success)' }}>
+                                            {formatCurrency(history.interesCobradoTotal)}
+                                        </span>
+                                    </div>
+                                    <div className="financial-detail-row">
+                                        <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Pendientes</span>
+                                        <span style={{ fontWeight: '600', color: 'var(--warning-light)' }}>
+                                            {formatCurrency(history.interesPendienteTotal)}
+                                        </span>
+                                    </div>
+                                    {history.moraCobradaTotal > 0 && (
+                                        <div className="financial-detail-row">
+                                            <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Mora cobrada</span>
+                                            <span style={{ fontWeight: '600', color: 'var(--danger-light)' }}>
+                                                {formatCurrency(history.moraCobradaTotal)}
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="glass-card disabled" style={{ padding: '14px', marginBottom: '14px' }}>
+                                    <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--success)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                        Total pagado por el cliente
+                                    </div>
+                                    <div style={{ fontSize: '22px', fontWeight: '700', color: 'var(--success)' }}>
+                                        {formatCurrency(history.totalPagado)}
+                                    </div>
+                                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: '1.5' }}>
+                                        {history.paymentsCount} pago(s) registrado(s).
+                                        {history.pagosSinDesglose > 0 && (
+                                            <>
+                                                {' '}Hay {formatCurrency(history.pagosSinDesglose)} sin desglose
+                                                capital/interés/mora (no clasificable).
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="glass-card disabled" style={{ padding: '12px', marginBottom: '14px' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '12px' }}>
+                                        <div>
+                                            <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Primer préstamo</div>
+                                            <div style={{ fontWeight: '600', marginTop: '2px' }}>
+                                                {history.primerPrestamo ? formatDate(history.primerPrestamo) : 'N/A'}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Último préstamo</div>
+                                            <div style={{ fontWeight: '600', marginTop: '2px' }}>
+                                                {history.ultimoPrestamo ? formatDate(history.ultimoPrestamo) : 'N/A'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </>
+                        )}
+
+                        <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '10px' }}>
+                            Préstamos históricos ({history.loansDetail.length})
+                        </div>
+
+                        {history.loansDetail.map(loan => {
+                            const isExpanded = expandedLoanId === loan.loanId;
+                            const statusColor =
+                                loan.status === 'finished' ? 'var(--success)' :
+                                loan.status === 'active' ? 'var(--accent-light)' :
+                                loan.status === 'overdue' ? 'var(--danger)' :
+                                loan.status === 'lost' ? 'var(--loss)' : 'var(--text-muted)';
+                            const statusBg =
+                                loan.status === 'finished' ? 'badge-success' :
+                                loan.status === 'active' ? 'badge-info' :
+                                loan.status === 'overdue' ? 'badge-danger' :
+                                loan.status === 'lost' ? 'badge-loss' : 'badge-neutral';
+
+                            return (
+                                <div key={loan.loanId} className="glass-card" style={{
+                                    padding: '14px', marginBottom: '8px',
+                                    borderLeft: `3px solid ${statusColor}`
+                                }}
+                                onClick={() => setExpandedLoanId(isExpanded ? null : loan.loanId)}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                                                <div style={{ fontSize: '13px', fontWeight: '600' }} className="truncate">
+                                                    #{loan.loanNumber}
+                                                </div>
+                                                <span className={`badge ${statusBg}`}
+                                                    style={{ padding: '2px 8px', fontSize: '10px' }}>
+                                                    {getStatusLabel(loan.status)}
+                                                </span>
+                                            </div>
+                                            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                                                {formatDate(loan.startDate || loan.createdAt)}
+                                                {' · '}
+                                                {formatTypeLabel(loan.interestType)}
+                                                {loan.interestRate > 0 && ` (${loan.interestRate}%)`}
+                                                {' · '}
+                                                {loan.installmentsCount} cuotas {formatFreq(loan.frequency).toLowerCase()}
+                                            </div>
+                                        </div>
+                                        <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: '10px' }}>
+                                            <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--accent-light)' }}>
+                                                {formatCurrency(loan.principal)}
+                                            </div>
+                                            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                                                capital
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: '1fr 1fr 1fr',
+                                        gap: '6px', fontSize: '11px',
+                                        padding: '8px 0',
+                                        borderTop: '1px solid var(--glass-border)',
+                                        borderBottom: '1px solid var(--glass-border)',
+                                        marginBottom: '8px'
+                                    }}>
+                                        <div>
+                                            <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>Interés pactado</div>
+                                            <div style={{ fontWeight: '600' }}>{formatCurrency(loan.pactadoInteres)}</div>
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>Cobrado</div>
+                                            <div style={{ fontWeight: '600', color: 'var(--success)' }}>
+                                                {formatCurrency(loan.capRec + loan.intCob + loan.moraCob)}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>Saldo</div>
+                                            <div style={{ fontWeight: '600', color: loan.saldoPendiente > 0 ? 'var(--warning)' : 'var(--success)' }}>
+                                                {formatCurrency(loan.saldoPendiente)}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {loan.status === 'lost' && loan.recuperadoDePerdida > 0 && (
+                                        <div style={{
+                                            padding: '6px 10px', marginBottom: '8px',
+                                            background: 'rgba(34,197,94,0.06)',
+                                            borderRadius: 'var(--radius-sm)',
+                                            fontSize: '10px', color: 'var(--recovery)'
+                                        }}>
+                                            Recuperado tras pérdida: {formatCurrency(loan.recuperadoDePerdida)}
+                                        </div>
+                                    )}
+
+                                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                        <button className="btn btn-ghost btn-xs"
+                                            onClick={(e) => { e.stopPropagation(); onNavigate('loanDetail', loan.loanId); }}>
+                                            <IconSVG.Eye /> Ver detalle completo
+                                        </button>
+                                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', alignSelf: 'center', marginLeft: 'auto' }}>
+                                            {isExpanded ? 'Ocultar detalle' : 'Ver detalle'}
+                                        </span>
+                                    </div>
+
+                                    {isExpanded && (
+                                        <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--glass-border)' }}>
+                                            <div style={{ fontSize: '11px', fontWeight: '600', marginBottom: '8px', color: 'var(--text-secondary)' }}>
+                                                Pagos registrados ({loan.payments.length})
+                                            </div>
+                                            {loan.payments.length === 0 ? (
+                                                <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic', padding: '6px 0' }}>
+                                                    Sin pagos registrados todavía.
+                                                </div>
+                                            ) : (
+                                                loan.payments.map(p => (
+                                                    <div key={p.id} style={{
+                                                        padding: '8px 10px',
+                                                        background: 'rgba(255,255,255,0.02)',
+                                                        borderRadius: 'var(--radius-sm)',
+                                                        marginBottom: '6px',
+                                                        fontSize: '11px'
+                                                    }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+                                                            <span style={{ color: 'var(--text-muted)' }}>
+                                                                {formatDateTime(p.paymentDate || p.createdAt)}
+                                                            </span>
+                                                            <span style={{ fontWeight: '700', color: 'var(--success)' }}>
+                                                                {formatCurrency(p.amount)}
+                                                            </span>
+                                                        </div>
+                                                        {p.breakdown && (
+                                                            <div style={{ display: 'flex', gap: '10px', fontSize: '10px', color: 'var(--text-muted)' }}>
+                                                                <span>Cap: <span style={{ color: 'var(--accent-light)' }}>{formatCurrency(p.breakdown.capital || 0)}</span></span>
+                                                                <span>Int: <span style={{ color: 'var(--warning-light)' }}>{formatCurrency(p.breakdown.interest || 0)}</span></span>
+                                                                <span>Mora: <span style={{ color: 'var(--danger-light)' }}>{formatCurrency(p.breakdown.mora || 0)}</span></span>
+                                                            </div>
+                                                        )}
+                                                        <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '3px' }}>
+                                                            {p.method} · {p.receiptNumber || 'Sin recibo'}
+                                                        </div>
+                                                    </div>
+                                                ))
+                                            )}
+
+                                            <div style={{ fontSize: '11px', fontWeight: '600', margin: '10px 0 8px', color: 'var(--text-secondary)' }}>
+                                                Cuotas ({loan.installments.length})
+                                            </div>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', fontSize: '10px', color: 'var(--text-muted)' }}>
+                                                <div>
+                                                    Pagadas: <span style={{ color: 'var(--success)', fontWeight: '600' }}>
+                                                        {loan.installments.filter(i => i.status === 'paid').length}
+                                                    </span>
+                                                </div>
+                                                <div>
+                                                    Pendientes: <span style={{ color: 'var(--warning)', fontWeight: '600' }}>
+                                                        {loan.installments.filter(i => i.status === 'pending' || i.status === 'partial').length}
+                                                    </span>
+                                                </div>
+                                                <div>
+                                                    Vencidas: <span style={{ color: 'var(--danger)', fontWeight: '600' }}>
+                                                        {loan.installments.filter(i => i.status === 'overdue').length}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </>
+                )}
+            </div>
+        );
+    };
+
+    // ============================================================
     // 19.2 COMPONENT: CLIENT DETAIL PAGE
     // ============================================================
 
-    const ClientDetailPage = ({ id, onNavigate }) => {
+    const ClientDetailPage = ({ id, onNavigate, onBack }) => {
         const { clients, loans, refreshAllData, addToast } = useApp();
         const [showEdit, setShowEdit] = useState(false);
         const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -5925,8 +7142,8 @@
                         Cliente no encontrado
                     </div>
                     <button className="btn btn-ghost" style={{ marginTop: '16px' }}
-                        onClick={() => onNavigate('clients')}>
-                        <IconSVG.ArrowLeft /> Volver a clientes
+                        onClick={onBack}>
+                        <IconSVG.ArrowLeft /> Volver
                     </button>
                 </div>
             );
@@ -5978,7 +7195,7 @@
                 await db.clients.delete(parseInt(id));
                 await refreshAllData();
                 addToast('Cliente eliminado', 'success');
-                onNavigate('clients');
+                onBack();
             } catch {
                 addToast('Error al eliminar.', 'error');
             }
@@ -5987,7 +7204,7 @@
 
         return (
             <div style={{ padding: '20px', paddingBottom: '120px' }}>
-                <button onClick={() => onNavigate('clients')} className="back-btn">
+                <button onClick={onBack} className="back-btn">
                     <IconSVG.ArrowLeft /> Volver
                 </button>
 
@@ -6124,6 +7341,8 @@
                     })
                 )}
 
+                <ClientFinancialHistory clientId={parseInt(id)} onNavigate={onNavigate} />
+
                 {showEdit && (
                     <div className="modal-overlay" onClick={() => setShowEdit(false)}>
                         <div className="modal-content" onClick={e => e.stopPropagation()}>
@@ -6156,9 +7375,10 @@
     // 19.3 COMPONENT: LOANS PAGE
     // ============================================================
 
-    const LoansPage = ({ onNavigate }) => {
-        const { loans, clients, loading } = useApp();
-        const [filter, setFilter] = useState('all');
+    const LoansPage = ({ onNavigate, onBack }) => {
+        const { loans, clients, loading, loansFilter, setLoansFilter } = useApp();
+        const filter = loansFilter;
+        const setFilter = setLoansFilter;
 
         const safeLoans = useMemo(() =>
             Array.isArray(loans) ? loans.filter(l => l && typeof l === 'object') : []
@@ -6253,7 +7473,7 @@
     // 19.4 COMPONENT: CREATE LOAN PAGE
     // ============================================================
 
-    const CreateLoanPage = ({ onNavigate, preselectedClientId, simulatorData }) => {
+    const CreateLoanPage = ({ onNavigate, onBack, preselectedClientId, simulatorData }) => {
         const { clients, refreshAllData, addToast, user } = useApp();
         const [form, setForm] = useState({
             clientId: preselectedClientId || simulatorData?.clientId || '',
@@ -6418,7 +7638,7 @@
 
         return (
             <div style={{ padding: '20px', paddingBottom: '120px' }}>
-                <button onClick={() => onNavigate('loans')} className="back-btn">
+                <button onClick={onBack} className="back-btn">
                     <IconSVG.ArrowLeft /> Volver
                 </button>
                 <div style={{ fontSize: '24px', fontWeight: '700', marginBottom: '16px' }}>Nuevo préstamo</div>
@@ -6508,7 +7728,7 @@
     // 19.5 COMPONENT: EDIT LOAN PAGE
     // ============================================================
 
-    const EditLoanPage = ({ id, onNavigate }) => {
+    const EditLoanPage = ({ id, onNavigate, onBack }) => {
         const { loans, clients, refreshAllData, addToast, user } = useApp();
         const loan = (loans || []).find(l => l && l.id === parseInt(id));
         const [form, setForm] = useState(null);
@@ -6540,7 +7760,7 @@
         if (loan.status === 'lost') {
             return (
                 <div style={{ padding: '20px', paddingBottom: '120px' }}>
-                    <button onClick={() => onNavigate('loanDetail', loan.id)} className="back-btn">
+                    <button onClick={onBack} className="back-btn">
                         <IconSVG.ArrowLeft /> Volver
                     </button>
                     <div className="glass-card disabled" style={{ padding: '20px', textAlign: 'center' }}>
@@ -6659,8 +7879,8 @@
 
         return (
             <div style={{ padding: '20px', paddingBottom: '120px' }}>
-                <button onClick={() => onNavigate('loanDetail', loan.id)} className="back-btn">
-                    <IconSVG.ArrowLeft /> Volver al préstamo
+                <button onClick={onBack} className="back-btn">
+                    <IconSVG.ArrowLeft /> Volver
                 </button>
                 <div style={{ fontSize: '24px', fontWeight: '700', marginBottom: '16px' }}>
                     Editar préstamo #{loan.loanNumber}
@@ -6728,10 +7948,10 @@
     };
 
     // ============================================================
-    // 19.6 COMPONENT: LOAN DETAIL PAGE (con corrección React #310)
+    // 19.6 COMPONENT: LOAN DETAIL PAGE
     // ============================================================
 
-    const LoanDetailPage = ({ id, onNavigate }) => {
+    const LoanDetailPage = ({ id, onNavigate, onBack }) => {
         const { loans, clients, installments, payments, lostDebts, recoveryMovements, lossCompensations, refreshAllData, addToast, user } = useApp();
         const loan = (loans || []).find(l => l && l.id === parseInt(id));
 
@@ -6746,13 +7966,9 @@
         const [viewingReceipt, setViewingReceipt] = useState(null);
         const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
         const [deleting, setDeleting] = useState(false);
+        const [collectionPngTarget, setCollectionPngTarget] = useState(null);
+        const [paymentPngTarget, setPaymentPngTarget] = useState(null);
 
-        // ═══ CORRECCIÓN React #310 ═══
-        // El useMemo DEBE ejecutarse ANTES del return temprano.
-        // Antes: cuando loan era undefined, se salía sin ejecutar el useMemo
-        // y React veía distinta cantidad de hooks entre renders → #310.
-        // Ahora: el useMemo se ejecuta siempre, antes del if (!loan).
-        // No se cambia ninguna fórmula ni dato, solo el orden.
         const lostDebt = (lostDebts || []).find(d => loan && d.loanId === loan.id);
 
         const lostDebtStatus = useMemo(() => {
@@ -6798,6 +8014,14 @@
             setEditingPayment(payment);
             setSelectedInstallment(installments.find(i => i.id === payment.installmentId));
             setShowEditAbonarModal(true);
+        };
+
+        const openCollectionPng = (installment) => {
+            setCollectionPngTarget(installment);
+        };
+
+        const openPaymentPng = (payment) => {
+            setPaymentPngTarget(payment);
         };
 
         const closeCobrarModal = () => {
@@ -6920,7 +8144,7 @@
                 await cleanOrphanCapitalMovements(user.id);
                 await refreshAllData();
                 addToast('Préstamo eliminado correctamente.', 'success');
-                onNavigate('loans');
+                onBack();
             } catch (err) {
                 console.error('[DELETE LOAN ERROR]', err);
                 addToast('Error al eliminar el préstamo: ' + (err.message || 'Error desconocido'), 'error');
@@ -6931,7 +8155,7 @@
 
         return (
             <div style={{ padding: '20px', paddingBottom: '120px' }}>
-                <button onClick={() => onNavigate('loans')} className="back-btn">
+                <button onClick={onBack} className="back-btn">
                     <IconSVG.ArrowLeft /> Volver
                 </button>
 
@@ -7138,7 +8362,7 @@
                             return (
                                 <div key={inst.id} className="glass-card disabled" style={{
                                     padding: '14px', marginBottom: '6px',
-                                    display: 'flex', alignItems: 'center', gap: '12px',
+                                    display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap',
                                     opacity: ipa ? 0.5 : 1,
                                     borderColor: io ? 'rgba(239,68,68,0.2)' :
                                         isDueToday ? 'rgba(245,158,11,0.2)' : 'rgba(255,255,255,0.06)'
@@ -7158,7 +8382,7 @@
                                     }}>
                                         {ipa ? <IconSVG.Check /> : io ? '!' : ipart ? '*' : inst.number}
                                     </div>
-                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ flex: 1, minWidth: '120px' }}>
                                         <div style={{ fontSize: '13px', fontWeight: '500' }}>Cuota {inst.number}</div>
                                         <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                                             Vence: {formatDate(inst.dueDate)}
@@ -7188,6 +8412,14 @@
                                                 }}>
                                                 Abonar
                                             </button>
+                                            <button className="btn btn-ghost btn-sm" onClick={() => openCollectionPng(inst)}
+                                                style={{
+                                                    padding: '6px 12px', fontSize: '11px', minHeight: 'auto',
+                                                    borderColor: 'var(--warning)', color: 'var(--warning-light)'
+                                                }}
+                                                title="Generar recordatorio de cobro en PNG">
+                                                <IconSVG.Image /> Recibo
+                                            </button>
                                         </div>
                                     )}
                                 </div>
@@ -7209,6 +8441,7 @@
                             onEdit={openEditPayment}
                             onDelete={setDeletingPayment}
                             onViewReceipt={setViewingReceipt}
+                            onGeneratePng={openPaymentPng}
                         />
                     </div>
                 )}
@@ -7308,6 +8541,31 @@
                     </div>
                 )}
 
+                {collectionPngTarget && (
+                    <ReceiptGenerator
+                        type="collection"
+                        payload={buildCollectionPayload({
+                            installment: collectionPngTarget,
+                            loan: loan,
+                            client: client
+                        })}
+                        onClose={() => setCollectionPngTarget(null)}
+                    />
+                )}
+
+                {paymentPngTarget && (
+                    <ReceiptGenerator
+                        type="payment"
+                        payload={buildPaymentPayload({
+                            payment: paymentPngTarget,
+                            loan: loan,
+                            client: client,
+                            installment: insts.find(i => i.id === paymentPngTarget.installmentId)
+                        })}
+                        onClose={() => setPaymentPngTarget(null)}
+                    />
+                )}
+
                 {showDeleteConfirm && (
                     <ConfirmDialog
                         title="Eliminar préstamo"
@@ -7327,7 +8585,7 @@
     // 20. COMPONENT: COLLECTIONS PAGE
     // ============================================================
 
-    const CollectionsPage = ({ onNavigate }) => {
+    const CollectionsPage = ({ onNavigate, onBack }) => {
         const { loans, clients, installments } = useApp();
         const [filter, setFilter] = useState('all');
         const today = todayLocal();
@@ -7421,7 +8679,7 @@
     // 20.1 COMPONENT: COLLECTION PROGRESS PAGE
     // ============================================================
 
-    const CollectionProgressPage = ({ onNavigate }) => {
+    const CollectionProgressPage = ({ onNavigate, onBack }) => {
         const { payments, installments, loans, clients, loading, refreshKey } = useApp();
 
         const now = new Date();
@@ -7476,7 +8734,7 @@
 
         return (
             <div style={{ padding: '20px', paddingBottom: '120px' }}>
-                <button onClick={() => onNavigate('dashboard')} className="back-btn">
+                <button onClick={onBack} className="back-btn">
                     <IconSVG.ArrowLeft /> Volver
                 </button>
 
@@ -7726,7 +8984,7 @@
     // 21. COMPONENT: FINANCE PAGE
     // ============================================================
 
-    const FinancePage = ({ onNavigate }) => {
+    const FinancePage = ({ onNavigate, onBack }) => {
         const { installments, payments, loans, expenses, capitalMovements, lostDebts, recoveryMovements, lossCompensations, clients, refreshKey } = useApp();
         const [showNetProfitDetail, setShowNetProfitDetail] = useState(false);
 
@@ -7920,7 +9178,7 @@
     // 22. COMPONENT: EXPENSES PAGE
     // ============================================================
 
-    const ExpensesPage = ({ onNavigate }) => {
+    const ExpensesPage = ({ onNavigate, onBack }) => {
         const { expenses, expenseCategories, refreshAllData, addToast, user } = useApp();
         const [showForm, setShowForm] = useState(false);
         const [editing, setEditing] = useState(null);
@@ -7994,7 +9252,7 @@
 
         return (
             <div style={{ padding: '20px', paddingBottom: '120px' }}>
-                <button onClick={() => onNavigate('finance')} className="back-btn">
+                <button onClick={onBack} className="back-btn">
                     <IconSVG.ArrowLeft /> Volver
                 </button>
 
@@ -8191,7 +9449,7 @@
     // 23. COMPONENT: SIMULATOR PAGE
     // ============================================================
 
-    const SimulatorPage = ({ onNavigate }) => {
+    const SimulatorPage = ({ onNavigate, onBack }) => {
         const [form, setForm] = useState({
             principal: '1000000', interestType: 'on_principal',
             interestRate: '20', installmentsCount: '10',
@@ -8245,7 +9503,7 @@
 
         return (
             <div style={{ padding: '20px', paddingBottom: '120px' }}>
-                <button onClick={() => onNavigate('loans')} className="back-btn">
+                <button onClick={onBack} className="back-btn">
                     <IconSVG.ArrowLeft /> Volver
                 </button>
                 <div style={{ fontSize: '26px', fontWeight: '700', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -8459,7 +9717,7 @@
     // 26. COMPONENT: CAPITAL CONTRIBUTION PAGE
     // ============================================================
 
-    const CapitalContributionPage = ({ onNavigate }) => {
+    const CapitalContributionPage = ({ onNavigate, onBack }) => {
         const { capitalMovements, refreshAllData, addToast, user, loading } = useApp();
         const [amount, setAmount] = useState('');
         const [date, setDate] = useState(formatDateLocal(todayLocal()));
@@ -8532,8 +9790,8 @@
 
         return (
             <div style={{ padding: '20px', paddingBottom: '120px' }}>
-                <button onClick={() => onNavigate('finance')} className="back-btn">
-                    <IconSVG.ArrowLeft /> Volver a Finanzas
+                <button onClick={onBack} className="back-btn">
+                    <IconSVG.ArrowLeft /> Volver
                 </button>
 
                 <div style={{ marginBottom: '14px' }}>
@@ -8727,7 +9985,7 @@
         );
     };
 
-    const MoneyMapPage = ({ onNavigate }) => {
+    const MoneyMapPage = ({ onNavigate, onBack }) => {
         const {
             clients, loans, installments, payments, expenses,
             capitalMovements, lostDebts, recoveryMovements, lossCompensations,
@@ -8872,7 +10130,7 @@
 
         return (
             <div style={{ padding: '20px', paddingBottom: '120px' }}>
-                <button onClick={() => onNavigate('dashboard')} className="back-btn">
+                <button onClick={onBack} className="back-btn">
                     <IconSVG.ArrowLeft /> Volver
                 </button>
 
@@ -9130,7 +10388,7 @@
     // 28. COMPONENT: INTELLIGENCE PAGE
     // ============================================================
 
-    const IntelligencePage = ({ onNavigate }) => {
+    const IntelligencePage = ({ onNavigate, onBack }) => {
         const {
             clients, loans, installments, payments, expenses,
             capitalMovements, lostDebts, recoveryMovements, lossCompensations,
@@ -9224,7 +10482,7 @@
 
         return (
             <div style={{ padding: '20px', paddingBottom: '120px' }}>
-                <button onClick={() => onNavigate('dashboard')} className="back-btn">
+                <button onClick={onBack} className="back-btn">
                     <IconSVG.ArrowLeft /> Volver
                 </button>
 
@@ -9553,7 +10811,7 @@
     // 29. COMPONENT: NOTES PAGE
     // ============================================================
 
-    const NotesPage = ({ onNavigate, initialAction, clearInitialAction }) => {
+    const NotesPage = ({ onNavigate, onBack, initialAction, clearInitialAction }) => {
         const { notes, refreshAllData, addToast, user } = useApp();
         const [search, setSearch] = useState('');
         const [showForm, setShowForm] = useState(initialAction === 'new');
@@ -9654,7 +10912,7 @@
 
         return (
             <div style={{ padding: '20px', paddingBottom: '120px' }}>
-                <button onClick={() => onNavigate('more')} className="back-btn">
+                <button onClick={onBack} className="back-btn">
                     <IconSVG.ArrowLeft /> Volver
                 </button>
 
@@ -9903,7 +11161,7 @@
     // 32. COMPONENT: MORE PAGE
     // ============================================================
 
-    const MorePage = ({ onNavigate }) => {
+    const MorePage = ({ onNavigate, onBack }) => {
         const { user, onLogout, addToast, config, notes, lostDebts } = useApp();
         const [subpage, setSubpage] = useState('main');
         const [showPassword, setShowPassword] = useState(false);
@@ -10172,7 +11430,7 @@
                 </button>
 
                 <div style={{ marginTop: '24px', textAlign: 'center', fontSize: '11px', color: 'var(--text-muted)' }}>
-                    LOANS W v11.0 · DB v{DB_VERSION}
+                    LOANS W v11.2 · DB v{DB_VERSION}
                 </div>
 
                 {showPassword && (
@@ -10330,12 +11588,17 @@
         const [showFab, setShowFab] = useState(true);
         const [notesInitialAction, setNotesInitialAction] = useState(null);
 
+        // ═══ v11.2 — Historial de navegación ═══
+        const historyStackRef = useRef([]);
+        const scrollPositionsRef = useRef({});
+        const isPoppingRef = useRef(false);
+
         useEffect(() => {
             let cancelled = false;
 
             const boot = async () => {
                 try {
-                    console.log('[BOOT] Iniciando Loans W v11.0...');
+                    console.log('[BOOT] Iniciando Loans W v11.2...');
                     setBootMessage('Abriendo base de datos...');
                     await initDatabase();
                     console.log('[BOOT] Base de datos lista');
@@ -10368,16 +11631,75 @@
             await SecurityUtils.destroySession();
             setUser(null);
             setAppState('login');
+            historyStackRef.current = [];
+            scrollPositionsRef.current = {};
         }, []);
 
+        // ═══ v11.2 — Navegación con historial ═══
         const navigate = useCallback((p, ...a) => {
+            // Guardar scroll de la pantalla actual antes de navegar
+            const currentKey = `${page}-${JSON.stringify(params)}`;
+            scrollPositionsRef.current[currentKey] = window.scrollY || 0;
+
+            // Apilar la pantalla actual en el historial
+            historyStackRef.current.push({ page, params });
+
+            // Actualizar estado
             setPage(p);
             setParams(a);
             setShowFab(!['createLoan', 'editLoan', 'loanDetail', 'clientDetail', 'more',
                 'expenses', 'simulator', 'notes', 'lostDebts', 'collectionProgress',
                 'moneyMap', 'intelligence', 'capitalContribution'].includes(p));
+
+            // Empujar entrada en el historial del navegador para que el gesto
+            // de back de iOS/Android funcione coordinado.
+            try {
+                window.history.pushState({ lw: true, page: p }, '');
+            } catch (e) {}
+
             window.scrollTo({ top: 0, behavior: 'smooth' });
+        }, [page, params]);
+
+        const goBack = useCallback(() => {
+            if (historyStackRef.current.length === 0) {
+                return;
+            }
+            const prev = historyStackRef.current.pop();
+            isPoppingRef.current = true;
+
+            setPage(prev.page);
+            setParams(prev.params);
+            setShowFab(!['createLoan', 'editLoan', 'loanDetail', 'clientDetail', 'more',
+                'expenses', 'simulator', 'notes', 'lostDebts', 'collectionProgress',
+                'moneyMap', 'intelligence', 'capitalContribution'].includes(prev.page));
+
+            // Restaurar scroll de la pantalla destino (después del render)
+            const targetKey = `${prev.page}-${JSON.stringify(prev.params)}`;
+            const savedScroll = scrollPositionsRef.current[targetKey] || 0;
+            setTimeout(() => {
+                try { window.scrollTo({ top: savedScroll, behavior: 'instant' }); } catch (e) {
+                    window.scrollTo(0, savedScroll);
+                }
+                isPoppingRef.current = false;
+            }, 50);
         }, []);
+
+        // Coordinar con el botón/gesto físico de regreso del navegador.
+        useEffect(() => {
+            const handlePopState = () => {
+                if (isPoppingRef.current) {
+                    return;
+                }
+                if (historyStackRef.current.length > 0) {
+                    goBack();
+                }
+            };
+            window.addEventListener('popstate', handlePopState);
+            try {
+                window.history.replaceState({ lw: true, page: 'dashboard' }, '');
+            } catch (e) {}
+            return () => window.removeEventListener('popstate', handlePopState);
+        }, [goBack]);
 
         const handleFabAction = useCallback((action) => {
             if (action === 'client') navigate('clients');
@@ -10395,25 +11717,25 @@
         const renderPage = () => {
             const content = (() => {
                 switch (page) {
-                    case 'dashboard': return <DashboardPage onNavigate={navigate} />;
-                    case 'clients': return <ClientsPage onNavigate={navigate} />;
-                    case 'clientDetail': return <ClientDetailPage id={params[0]} onNavigate={navigate} />;
-                    case 'loans': return <LoansPage onNavigate={navigate} />;
-                    case 'createLoan': return <CreateLoanPage preselectedClientId={params[0]} simulatorData={params[1]} onNavigate={navigate} />;
-                    case 'editLoan': return <EditLoanPage id={params[0]} onNavigate={navigate} />;
-                    case 'loanDetail': return <LoanDetailPage id={params[0]} onNavigate={navigate} />;
-                    case 'collections': return <CollectionsPage onNavigate={navigate} />;
-                    case 'collectionProgress': return <CollectionProgressPage onNavigate={navigate} />;
-                    case 'finance': return <FinancePage onNavigate={navigate} />;
-                    case 'lostDebts': return <LostDebtsPage onNavigate={navigate} />;
-                    case 'expenses': return <ExpensesPage onNavigate={navigate} />;
-                    case 'simulator': return <SimulatorPage onNavigate={navigate} />;
-                    case 'notes': return <NotesPage onNavigate={navigate} initialAction={notesInitialAction} clearInitialAction={() => setNotesInitialAction(null)} />;
-                    case 'more': return <MorePage onNavigate={navigate} />;
-                    case 'moneyMap': return <MoneyMapPage onNavigate={navigate} />;
-                    case 'intelligence': return <IntelligencePage onNavigate={navigate} />;
-                    case 'capitalContribution': return <CapitalContributionPage onNavigate={navigate} />;
-                    default: return <DashboardPage onNavigate={navigate} />;
+                    case 'dashboard': return <DashboardPage onNavigate={navigate} onBack={goBack} />;
+                    case 'clients': return <ClientsPage onNavigate={navigate} onBack={goBack} />;
+                    case 'clientDetail': return <ClientDetailPage id={params[0]} onNavigate={navigate} onBack={goBack} />;
+                    case 'loans': return <LoansPage onNavigate={navigate} onBack={goBack} />;
+                    case 'createLoan': return <CreateLoanPage preselectedClientId={params[0]} simulatorData={params[1]} onNavigate={navigate} onBack={goBack} />;
+                    case 'editLoan': return <EditLoanPage id={params[0]} onNavigate={navigate} onBack={goBack} />;
+                    case 'loanDetail': return <LoanDetailPage id={params[0]} onNavigate={navigate} onBack={goBack} />;
+                    case 'collections': return <CollectionsPage onNavigate={navigate} onBack={goBack} />;
+                    case 'collectionProgress': return <CollectionProgressPage onNavigate={navigate} onBack={goBack} />;
+                    case 'finance': return <FinancePage onNavigate={navigate} onBack={goBack} />;
+                    case 'lostDebts': return <LostDebtsPage onNavigate={navigate} onBack={goBack} />;
+                    case 'expenses': return <ExpensesPage onNavigate={navigate} onBack={goBack} />;
+                    case 'simulator': return <SimulatorPage onNavigate={navigate} onBack={goBack} />;
+                    case 'notes': return <NotesPage onNavigate={navigate} onBack={goBack} initialAction={notesInitialAction} clearInitialAction={() => setNotesInitialAction(null)} />;
+                    case 'more': return <MorePage onNavigate={navigate} onBack={goBack} />;
+                    case 'moneyMap': return <MoneyMapPage onNavigate={navigate} onBack={goBack} />;
+                    case 'intelligence': return <IntelligencePage onNavigate={navigate} onBack={goBack} />;
+                    case 'capitalContribution': return <CapitalContributionPage onNavigate={navigate} onBack={goBack} />;
+                    default: return <DashboardPage onNavigate={navigate} onBack={goBack} />;
                 }
             })();
 
@@ -10487,13 +11809,17 @@
     );
 
     console.log('========================================');
-    console.log('LOANS W v11.0 — CORRECCIÓN React #310');
+    console.log('LOANS W v11.2 — HISTORIAL FINANCIERO + BACK STACK');
     console.log('========================================');
-    console.log('Fix aplicado: useMemo movido antes del return temprano');
-    console.log('Archivo: LoanDetailPage');
-    console.log('Sin cambios financieros / de diseño / de DB');
+    console.log('Nuevo motor: ClientHistoryEngine (solo lectura)');
+    console.log('Nuevo componente: ClientFinancialHistory');
+    console.log('Back stack con goBack() y popstate sincronizado');
+    console.log('Filtros persistidos: clientsSearch, loansFilter');
+    console.log('React #310 corregido y conservado');
     console.log('========================================');
 </script>
 </body>
 </html>
+ 
+
  
