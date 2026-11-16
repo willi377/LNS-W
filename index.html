@@ -554,6 +554,22 @@
         return `En ${diff} días`;
     };
 
+    // Helpers de consulta: no escriben ni recalculan datos persistidos.
+    const getInstallmentPendingAmount = (installment) => {
+        if (!installment || installment.status === 'paid' || installment.status === 'cancelled') return 0;
+        const storedRemaining = installment.remainingAmount;
+        const fallbackRemaining = normalizeMoney(
+            normalizeMoney(installment.totalAmount || 0) - normalizeMoney(installment.paidAmount || 0)
+        );
+        return normalizeMoney(Math.max(0, storedRemaining == null ? fallbackRemaining : storedRemaining));
+    };
+
+    const isInstallmentInMonth = (installment, year, month) => {
+        if (!installment?.dueDate) return false;
+        const due = parseLocalDate(installment.dueDate);
+        return due.getUTCFullYear() === year && due.getUTCMonth() + 1 === month;
+    };
+
     const getStatusLabel = (s) => ({
         paid: 'Pagada',
         pending: 'Pendiente',
@@ -2147,7 +2163,7 @@
         }
     }
 
-    const DB_VERSION = 9999;
+    const DB_VERSION = 10000;
     const DB_NAME = 'LoansW_DB';
     const db = new Dexie(DB_NAME);
 
@@ -2171,85 +2187,24 @@
         lossCompensations: '++id, userId, lostDebtId, paymentId, loanId, clientId, installmentId, amountAppliedToLoss, interestGenerated, moraGenerated, capitalReceived, pendingBefore, pendingAfter, appliedAt, description, createdAt'
     };
 
-    db.version(9999).stores(SCHEMA_FINAL);
-
-    db.version(13).stores({
-        users: '++id, &document, email, createdAt',
-        clients: '++id, userId, fullName, document, phone, email, address, city, neighborhood, company, occupation, references, notes, status, photo, createdAt, updatedAt',
-        loans: '++id, userId, clientId, loanNumber, principal, interestType, interestRate, installmentsCount, frequency, startDate, dueDateType, moraType, moraRate, status, totalRepayment, totalPaid, currentBalance, progress, createdAt, updatedAt, lostAt',
-        installments: '++id, loanId, number, startDate, dueDate, principal, interest, totalAmount, paidAmount, remainingAmount, moraDays, moraAmount, moraPaid, moraRemaining, status',
-        payments: '++id, loanId, clientId, installmentId, amount, paymentDate, method, note, breakdown, paymentType, receiptNumber, isFullPayment, surplus, createdAt, updatedAt',
-        capitalMovements: '++id, userId, type, amount, date, description, referenceType, referenceId, createdAt',
-        expenses: '++id, userId, category, amount, date, time, description, provider, paymentMethod, notes, receiptPhoto, capitalMovementId, createdAt, updatedAt',
-        expenseCategories: '++id, name',
-        settings: '&userId',
-        auditLog: '++id, userId, timestamp, entityType, entityId, action, description, before, after, details',
-        sessions: '++id, userId, token, expiresAt, createdAt',
-        collectionPeriods: '++id, userId, year, month, expectedAmount, collectedAmount, pendingAmount, compliance, data, createdAt, updatedAt',
-        simulations: '++id, userId, name, data, createdAt',
-        notes: '++id, userId, titulo, contenido, fechaCreacion, fechaModificacion, fijada',
-        lostDebts: '++id, userId, loanId, clientId, lostAt, lostCapital, lostExpectedProfit, totalExpected, pendingBalanceAtLoss, recoveredCapital, recoveredInterest, status, fullyRecoveredAt, createdAt, updatedAt',
-        recoveryMovements: '++id, lostDebtId, loanId, clientId, amount, capitalRecovered, interestRecovered, recoveryDate, method, note, userId, createdAt',
-        lossCompensations: '++id, userId, lostDebtId, paymentId, loanId, clientId, installmentId, amountAppliedToLoss, interestGenerated, moraGenerated, capitalReceived, pendingBefore, pendingAfter, appliedAt, description, createdAt'
-    }).upgrade(async tx => {
-        console.log('[DB] Migrando a v13 — agregando tabla lossCompensations (sin borrar datos)...');
+    // Mantener una única versión actual evita definir versiones fuera de orden
+    // (por ejemplo, 9999 antes de 11/12/13), lo que puede impedir que Dexie abra
+    // la base de datos y ejecutar correctamente las migraciones.
+    db.version(DB_VERSION).stores(SCHEMA_FINAL).upgrade(async tx => {
+        console.log(`[DB] Migrando a v${DB_VERSION}...`);
         try {
-            const table = tx.table('lossCompensations');
-            const count = await table.count();
-            console.log(`[DB] Migración v13 OK — lossCompensations: ${count} registros existentes`);
-        } catch (err) {
-            console.warn('[DB] Migración v13 advirtió (no crítico):', err);
-        }
-    });
-
-    db.version(12).stores({
-        users: '++id, &document, email, createdAt',
-        clients: '++id, userId, fullName, document, phone, email, address, city, neighborhood, company, occupation, references, notes, status, photo, createdAt, updatedAt',
-        loans: '++id, userId, clientId, loanNumber, principal, interestType, interestRate, installmentsCount, frequency, startDate, dueDateType, moraType, moraRate, status, totalRepayment, totalPaid, currentBalance, progress, createdAt, updatedAt, lostAt',
-        installments: '++id, loanId, number, startDate, dueDate, principal, interest, totalAmount, paidAmount, remainingAmount, moraDays, moraAmount, moraPaid, moraRemaining, status',
-        payments: '++id, loanId, clientId, installmentId, amount, paymentDate, method, note, breakdown, paymentType, receiptNumber, isFullPayment, surplus, createdAt, updatedAt',
-        capitalMovements: '++id, userId, type, amount, date, description, referenceType, referenceId, createdAt',
-        expenses: '++id, userId, category, amount, date, time, description, provider, paymentMethod, notes, receiptPhoto, capitalMovementId, createdAt, updatedAt',
-        expenseCategories: '++id, name',
-        settings: '&userId',
-        auditLog: '++id, userId, timestamp, entityType, entityId, action, description, before, after, details',
-        sessions: '++id, userId, token, expiresAt, createdAt',
-        collectionPeriods: '++id, userId, year, month, expectedAmount, collectedAmount, pendingAmount, compliance, data, createdAt, updatedAt',
-        simulations: '++id, userId, name, data, createdAt',
-        notes: '++id, userId, titulo, contenido, fechaCreacion, fechaModificacion, fijada',
-        lostDebts: '++id, userId, loanId, clientId, lostAt, lostCapital, lostExpectedProfit, totalExpected, pendingBalanceAtLoss, recoveredCapital, recoveredInterest, status, fullyRecoveredAt, createdAt, updatedAt',
-        recoveryMovements: '++id, lostDebtId, loanId, clientId, amount, capitalRecovered, interestRecovered, recoveryDate, method, note, userId, createdAt'
-    });
-
-    db.version(11).stores({
-        users: '++id, &document, email, createdAt',
-        clients: '++id, userId, fullName, document, phone, email, address, city, neighborhood, company, occupation, references, notes, status, photo, createdAt, updatedAt',
-        loans: '++id, userId, clientId, loanNumber, principal, interestType, interestRate, installmentsCount, frequency, startDate, dueDateType, moraType, moraRate, status, totalRepayment, totalPaid, currentBalance, progress, createdAt, updatedAt',
-        installments: '++id, loanId, number, startDate, dueDate, principal, interest, totalAmount, paidAmount, remainingAmount, moraDays, moraAmount, moraPaid, moraRemaining, status',
-        payments: '++id, loanId, clientId, installmentId, amount, paymentDate, method, note, breakdown, paymentType, receiptNumber, isFullPayment, surplus, createdAt, updatedAt',
-        capitalMovements: '++id, userId, type, amount, date, description, referenceType, referenceId, createdAt',
-        expenses: '++id, userId, category, amount, date, time, description, provider, paymentMethod, notes, receiptPhoto, capitalMovementId, createdAt, updatedAt',
-        expenseCategories: '++id, name',
-        settings: '&userId',
-        auditLog: '++id, userId, timestamp, entityType, entityId, action, description, before, after, details',
-        sessions: '++id, userId, token, expiresAt, createdAt',
-        collectionPeriods: '++id, userId, year, month, expectedAmount, collectedAmount, pendingAmount, compliance, data, createdAt, updatedAt',
-        simulations: '++id, userId, name, data, createdAt',
-        notes: '++id, userId, titulo, contenido, fechaCreacion, fechaModificacion, fijada'
-    }).upgrade(async tx => {
-        console.log('[DB] Migrando a v12...');
-        try {
-            const loans = await tx.table('loans').toArray();
+            const loansTable = tx.table('loans');
+            const loans = await loansTable.toArray();
             let migratedCount = 0;
             for (const loan of loans) {
                 if (loan.status === 'lost' && !loan.lostAt) {
-                    await tx.table('loans').update(loan.id, { lostAt: new Date().toISOString() });
+                    await loansTable.update(loan.id, { lostAt: new Date().toISOString() });
                     migratedCount++;
                 }
             }
-            console.log(`[DB] Migración a v12 completada - ${migratedCount} préstamos actualizados`);
+            console.log(`[DB] Migración completada — ${migratedCount} préstamos actualizados`);
         } catch (err) {
-            console.error('[DB] Error en migración v12:', err);
+            console.warn('[DB] La migración terminó con advertencias:', err);
         }
     });
 
@@ -2342,8 +2297,10 @@
             const allMovements = await db.capitalMovements.where({ userId }).toArray();
             const allLoans = await db.loans.where({ userId }).toArray();
             const allExpenses = await db.expenses.where({ userId }).toArray();
+            const allPayments = await db.payments.toArray();
             const loanIds = new Set(allLoans.map(l => l.id));
             const expenseIds = new Set(allExpenses.map(e => e.id));
+            const paymentIds = new Set(allPayments.map(p => p.id));
 
             const allInstallments = [];
             for (const loan of allLoans) {
@@ -2355,7 +2312,7 @@
             const toDelete = [];
             for (const mov of allMovements) {
                 if (mov.referenceType === 'loan' && mov.referenceId && !loanIds.has(mov.referenceId)) toDelete.push(mov.id);
-                else if (mov.referenceType === 'payment' && mov.referenceId && !installmentIds.has(mov.referenceId)) toDelete.push(mov.id);
+                else if (mov.referenceType === 'payment' && mov.referenceId && !paymentIds.has(mov.referenceId)) toDelete.push(mov.id);
                 else if (mov.referenceType === 'expense' && mov.referenceId && !expenseIds.has(mov.referenceId)) toDelete.push(mov.id);
             }
 
@@ -6169,6 +6126,70 @@
     };
 
     // ============================================================
+    // ALERT DETAIL MODAL — solo lectura
+    // ============================================================
+
+    const AlertDetailModal = ({ alert, onClose, onNavigate }) => {
+        if (!alert) return null;
+        const items = alert.items || [];
+        const isLossAlert = alert.kind === 'loss';
+
+        return (
+            <div className="modal-overlay" onClick={onClose}>
+                <div className="modal-content" onClick={e => e.stopPropagation()}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                        <div>
+                            <div style={{ fontSize: '19px', fontWeight: '700' }}>{alert.title}</div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>
+                                Información tomada de los registros existentes
+                            </div>
+                        </div>
+                        <button className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Cerrar detalle"><IconSVG.X /></button>
+                    </div>
+
+                    {items.length === 0 ? (
+                        <div className="empty-state" style={{ padding: '28px 10px' }}>No hay registros relacionados.</div>
+                    ) : items.map(item => {
+                        const loan = item.loan;
+                        const client = item.client;
+                        const pending = getInstallmentPendingAmount(item.installment);
+                        return (
+                            <div key={item.key} className="glass-card disabled" style={{ padding: '13px', marginBottom: '8px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+                                    <div style={{ minWidth: 0 }}>
+                                        <div style={{ fontWeight: '700', fontSize: '14px' }}>{client?.fullName || item.label || 'Registro'}</div>
+                                        {loan && <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>Préstamo #{loan.loanNumber}</div>}
+                                    </div>
+                                    <span className={`badge ${item.type === 'danger' ? 'badge-danger' : 'badge-warning'}`}>
+                                        {item.type === 'danger' ? 'Atención' : 'Próximo'}
+                                    </span>
+                                </div>
+                                {item.installment && (
+                                    <div style={{ marginTop: '9px', fontSize: '12px' }}>
+                                        <div className="financial-detail-row"><span>Cuota</span><strong>#{item.installment.number}</strong></div>
+                                        <div className="financial-detail-row"><span>Vencimiento</span><strong>{formatDate(item.installment.dueDate)}</strong></div>
+                                        <div className="financial-detail-row"><span>Valor original</span><strong>{formatCurrency(item.installment.totalAmount || 0)}</strong></div>
+                                        <div className="financial-detail-row"><span>Abonado</span><strong>{formatCurrency(item.installment.paidAmount || 0)}</strong></div>
+                                        <div className="financial-detail-row"><span>Saldo de cuota</span><strong style={{ color: 'var(--warning)' }}>{formatCurrency(pending)}</strong></div>
+                                        {item.daysLate > 0 && <div className="financial-detail-row"><span>Días de atraso</span><strong style={{ color: 'var(--danger-light)' }}>{item.daysLate}</strong></div>}
+                                    </div>
+                                )}
+                                {item.loss && <div style={{ marginTop: '9px', fontSize: '12px', color: 'var(--text-secondary)' }}>Pendiente por recuperar: <strong>{formatCurrency(item.loss.pending || 0)}</strong></div>}
+                                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '10px' }}>
+                                    {client && <button className="btn btn-ghost btn-xs" onClick={() => { onClose(); onNavigate('clientDetail', client.id); }}>Ver cliente</button>}
+                                    {loan && <button className="btn btn-ghost btn-xs" onClick={() => { onClose(); onNavigate('loanDetail', loan.id); }}>Ver préstamo</button>}
+                                    {loan && item.installment && pending > 0 && <button className="btn btn-primary btn-xs" onClick={() => { onClose(); onNavigate('loanDetail', loan.id, item.installment.id); }}>Cobrar cuota</button>}
+                                </div>
+                            </div>
+                        );
+                    })}
+                    {isLossAlert && <div className="explain-box">Esta alerta corresponde a pérdidas pendientes y no modifica los registros históricos.</div>}
+                </div>
+            </div>
+        );
+    };
+
+    // ============================================================
     // 19. COMPONENT: DASHBOARD PAGE
     // ============================================================
 
@@ -6177,6 +6198,7 @@
             loans, installments, payments, expenses, capitalMovements,
             clients, lostDebts, recoveryMovements, lossCompensations, loading, refreshKey
         } = useApp();
+        const [selectedAlert, setSelectedAlert] = useState(null);
 
         const metrics = useMemo(() => {
             return FinancialCore.compute({
@@ -6213,12 +6235,12 @@
         const safeClients = Array.isArray(clients) ? clients : [];
 
         const dueToday = useMemo(() => safeInstallments.filter(i => {
-            if (i.status === 'paid' || i.status === 'cancelled') return false;
+            if (i.status === 'paid' || i.status === 'cancelled' || getInstallmentPendingAmount(i) <= 0) return false;
             const due = parseLocalDate(i.dueDate);
             return getCalendarDaysDiff(today, due) === 0;
         }), [safeInstallments, refreshKey]);
 
-        const overdueList = useMemo(() => safeInstallments.filter(i => i.status === 'overdue')
+        const overdueList = useMemo(() => safeInstallments.filter(i => i.status === 'overdue' && getInstallmentPendingAmount(i) > 0)
             .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate)), [safeInstallments, refreshKey]);
 
         const totalMora = useMemo(() => safeInstallments
@@ -6230,17 +6252,31 @@
             .slice(0, 5), [safePayments, refreshKey]);
 
         const alerts = useMemo(() => {
-            const a = [];
-            if (overdueList.length > 0) a.push({ type: 'danger', msg: `${overdueList.length} cuotas vencidas`, icon: <IconSVG.Clock /> });
-            if (totalMora > 0) a.push({ type: 'danger', msg: `Mora acumulada: ${formatCurrency(totalMora)}`, icon: <IconSVG.AlertTriangle /> });
-            if (dueToday.length > 0) a.push({ type: 'warning', msg: `${dueToday.length} cuotas vencen hoy`, icon: <IconSVG.Calendar /> });
-            if (metrics.perdidaPendiente > 0) a.push({
-                type: 'warning',
-                msg: `Pérdidas por recuperar: ${formatCurrency(metrics.perdidaPendiente)}`,
-                icon: <IconSVG.Lost />
+            const makeItems = (list, type) => list.map(inst => {
+                const loan = safeLoans.find(l => l.id === inst.loanId);
+                return {
+                    key: `${type}-${inst.id}`, type, installment: inst, loan,
+                    client: safeClients.find(c => c.id === loan?.clientId),
+                    daysLate: type === 'danger' ? MoraEngine.calculateMoraDays(inst.dueDate) : 0
+                };
             });
+            const a = [];
+            if (overdueList.length > 0) a.push({ kind: 'overdue', type: 'danger', msg: `${overdueList.length} cuotas vencidas`, title: 'Cuotas vencidas', icon: <IconSVG.Clock />, items: makeItems(overdueList, 'danger') });
+            if (totalMora > 0) {
+                const moraItems = safeInstallments.filter(i => getInstallmentPendingAmount(i) > 0 && MoraEngine.calculateMoraRemaining(i) > 0);
+                a.push({ kind: 'mora', type: 'danger', msg: `Mora acumulada: ${formatCurrency(totalMora)}`, title: 'Mora acumulada', icon: <IconSVG.AlertTriangle />, items: makeItems(moraItems, 'danger') });
+            }
+            if (dueToday.length > 0) a.push({ kind: 'today', type: 'warning', msg: `${dueToday.length} cuotas vencen hoy`, title: 'Cuotas que vencen hoy', icon: <IconSVG.Calendar />, items: makeItems(dueToday, 'warning') });
+            if (metrics.perdidaPendiente > 0) {
+                const lossItems = (lostDebts || []).map(loss => ({
+                    key: `loss-${loss.id}`, kind: 'loss', type: 'warning', loss,
+                    loan: safeLoans.find(l => l.id === loss.loanId),
+                    client: safeClients.find(c => c.id === loss.clientId)
+                }));
+                a.push({ kind: 'loss', type: 'warning', msg: `Pérdidas por recuperar: ${formatCurrency(metrics.perdidaPendiente)}`, title: 'Pérdidas por recuperar', icon: <IconSVG.Lost />, items: lossItems });
+            }
             return a;
-        }, [overdueList, totalMora, dueToday, metrics.perdidaPendiente]);
+        }, [overdueList, totalMora, dueToday, metrics.perdidaPendiente, lostDebts, safeLoans, safeClients]);
 
         const greeting = () => {
             const h = new Date().getHours();
@@ -6454,19 +6490,21 @@
                             </span>
                         </div>
                         {alerts.map((a, i) => (
-                            <div key={i} className="glass-card" style={{
-                                padding: '10px', marginBottom: '6px',
-                                display: 'flex', alignItems: 'center', gap: '8px',
+                            <button key={i} type="button" className="glass-card" onClick={() => setSelectedAlert(a)} style={{
+                                width: '100%', textAlign: 'left', padding: '10px', marginBottom: '6px',
+                                display: 'flex', alignItems: 'center', gap: '8px', color: 'inherit',
                                 borderColor: a.type === 'danger' ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)'
-                            }}>
+                            }} aria-label={`Abrir detalle: ${a.msg}`}>
                                 <span style={{ color: a.type === 'danger' ? 'var(--danger)' : 'var(--warning)' }}>{a.icon}</span>
                                 <span style={{ fontSize: '12px', color: a.type === 'danger' ? 'var(--danger-light)' : 'var(--warning-light)' }}>
                                     {a.msg}
                                 </span>
-                            </div>
+                            </button>
                         ))}
                     </div>
                 )}
+
+                <AlertDetailModal alert={selectedAlert} onClose={() => setSelectedAlert(null)} onNavigate={onNavigate} />
 
                 {recentPayments.length > 0 && (
                     <div style={{ marginBottom: '14px' }}>
@@ -7951,7 +7989,7 @@
     // 19.6 COMPONENT: LOAN DETAIL PAGE
     // ============================================================
 
-    const LoanDetailPage = ({ id, onNavigate, onBack }) => {
+    const LoanDetailPage = ({ id, onNavigate, onBack, focusInstallmentId = null }) => {
         const { loans, clients, installments, payments, lostDebts, recoveryMovements, lossCompensations, refreshAllData, addToast, user } = useApp();
         const loan = (loans || []).find(l => l && l.id === parseInt(id));
 
@@ -7970,6 +8008,15 @@
         const [paymentPngTarget, setPaymentPngTarget] = useState(null);
 
         const lostDebt = (lostDebts || []).find(d => loan && d.loanId === loan.id);
+
+        useEffect(() => {
+            if (!focusInstallmentId || !loan) return;
+            const target = (installments || []).find(i => i.id === Number(focusInstallmentId) && i.loanId === loan.id);
+            if (target && target.status !== 'paid' && target.status !== 'cancelled') {
+                setSelectedInstallment(target);
+                setShowCobrarModal(true);
+            }
+        }, [focusInstallmentId, loan, installments]);
 
         const lostDebtStatus = useMemo(() => {
             if (!lostDebt) return null;
@@ -8606,13 +8653,20 @@
         const overdue = data.filter(l => l.status === 'overdue' || l._i?.some(i => i.status === 'overdue'));
         const pending = data.filter(l => l.status === 'active' || l.status === 'overdue');
         const paid = data.filter(l => l.status === 'finished');
+        const currentYear = today.getUTCFullYear();
+        const currentMonth = today.getUTCMonth() + 1;
+        const pendingMonthItems = data.flatMap(l => (l._i || [])
+            .filter(i => isInstallmentInMonth(i, currentYear, currentMonth) && getInstallmentPendingAmount(i) > 0)
+            .map(i => ({ ...i, _loan: l, _client: l._c })));
+        const pendingMonthTotal = normalizeMoney(pendingMonthItems.reduce((sum, i) => sum + getInstallmentPendingAmount(i), 0));
 
         const filtered = filter === 'today' ? dueToday : filter === 'overdue' ? overdue :
-            filter === 'pending' ? pending : filter === 'paid' ? paid : data;
+            filter === 'pending' ? pendingMonthItems : filter === 'paid' ? paid : data;
 
         return (
             <div style={{ padding: '20px', paddingBottom: '120px' }}>
-                <div style={{ fontSize: '26px', fontWeight: '700', marginBottom: '14px' }}>Cobros</div>
+                <div style={{ fontSize: '26px', fontWeight: '700', marginBottom: '4px' }}>Cobros</div>
+                {filter === 'pending' && <div style={{ fontSize: '12px', color: 'var(--warning)', marginBottom: '14px' }}>Pendiente de {getMonthName(currentMonth)}: <strong>{formatCurrency(pendingMonthTotal)}</strong></div>}
 
                 <div style={{ display: 'flex', gap: '6px', marginBottom: '14px', overflow: 'auto' }}>
                     {[
@@ -8636,7 +8690,34 @@
                     <EmptyState icon={<IconSVG.Receipt />} title="No hay cobros"
                         description="No se encontraron cobros para este filtro" />
                 ) : (
-                    filtered.map(l => {
+                    filtered.map(item => {
+                        if (filter === 'pending') {
+                            const inst = item;
+                            const loan = inst._loan;
+                            return (
+                                <div key={`pending-${inst.id}`} className="glass-card disabled" style={{ padding: '14px', marginBottom: '8px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+                                        <div>
+                                            <div style={{ fontWeight: '600' }}>{getSafeString(inst._client?.fullName, 'Cliente')}</div>
+                                            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>#{loan.loanNumber} · Cuota {inst.number}</div>
+                                        </div>
+                                        <span style={{ fontWeight: '700', color: 'var(--warning)' }}>{formatCurrency(getInstallmentPendingAmount(inst))}</span>
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px', fontSize: '11px', color: 'var(--text-muted)', marginTop: '9px' }}>
+                                        <span>Vence: <strong>{formatDate(inst.dueDate)}</strong></span>
+                                        <span>Original: <strong>{formatCurrency(inst.totalAmount || 0)}</strong></span>
+                                        <span>Abonado: <strong>{formatCurrency(inst.paidAmount || 0)}</strong></span>
+                                        <span>Estado: <strong>{getStatusLabel(inst.status)}</strong></span>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
+                                        <button className="btn btn-ghost btn-xs" onClick={() => onNavigate('clientDetail', inst._client?.id)}>Ver cliente</button>
+                                        <button className="btn btn-ghost btn-xs" onClick={() => onNavigate('loanDetail', loan.id)}>Ver préstamo</button>
+                                        <button className="btn btn-primary btn-xs" onClick={() => onNavigate('loanDetail', loan.id, inst.id)}>Cobrar</button>
+                                    </div>
+                                </div>
+                            );
+                        }
+                        const l = item;
                         const pendingCount = l._i?.filter(i => i.status !== 'paid' && i.status !== 'cancelled').length || 0;
                         const overdueCount = l._i?.filter(i => i.status === 'overdue').length || 0;
                         const totalWithMora = normalizeMoney(l._i?.reduce((sum, i) => {
@@ -11723,7 +11804,7 @@
                     case 'loans': return <LoansPage onNavigate={navigate} onBack={goBack} />;
                     case 'createLoan': return <CreateLoanPage preselectedClientId={params[0]} simulatorData={params[1]} onNavigate={navigate} onBack={goBack} />;
                     case 'editLoan': return <EditLoanPage id={params[0]} onNavigate={navigate} onBack={goBack} />;
-                    case 'loanDetail': return <LoanDetailPage id={params[0]} onNavigate={navigate} onBack={goBack} />;
+                    case 'loanDetail': return <LoanDetailPage id={params[0]} focusInstallmentId={params[1]} onNavigate={navigate} onBack={goBack} />;
                     case 'collections': return <CollectionsPage onNavigate={navigate} onBack={goBack} />;
                     case 'collectionProgress': return <CollectionProgressPage onNavigate={navigate} onBack={goBack} />;
                     case 'finance': return <FinancePage onNavigate={navigate} onBack={goBack} />;
@@ -11822,4 +11903,4 @@
 </html>
  
 
- 
+  
