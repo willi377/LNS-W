@@ -1,4 +1,4 @@
- <!DOCTYPE html>
+  <!DOCTYPE html>
 <html lang="es-CO">
 <head>
     <meta charset="UTF-8">
@@ -597,6 +597,74 @@
         return fallback;
     };
 
+    const DEFAULT_PAYMENT_INFO = {
+        paymentMethod: 'Nequi',
+        paymentAccountNumber: '3212432325',
+        paymentKey: '3212432325',
+        paymentAccountName: 'Dina Marcela Jiménez',
+        paymentInstruction: 'Mandar captura de la transferencia'
+    };
+
+    const getPaymentInfo = (config = {}) => {
+        const safeConfig = config || {};
+        return {
+            paymentMethod: getSafeString(safeConfig.paymentMethod, DEFAULT_PAYMENT_INFO.paymentMethod),
+            paymentAccountNumber: getSafeString(safeConfig.paymentAccountNumber, DEFAULT_PAYMENT_INFO.paymentAccountNumber),
+            paymentKey: getSafeString(safeConfig.paymentKey, DEFAULT_PAYMENT_INFO.paymentKey),
+            paymentAccountName: getSafeString(safeConfig.paymentAccountName, DEFAULT_PAYMENT_INFO.paymentAccountName),
+            paymentInstruction: getSafeString(safeConfig.paymentInstruction, DEFAULT_PAYMENT_INFO.paymentInstruction)
+        };
+    };
+
+    const paymentInfoText = (config = {}) => {
+        const info = getPaymentInfo(config);
+        return `Método de pago: ${info.paymentMethod}\nNúmero de cuenta: ${info.paymentAccountNumber}\nLlave: ${info.paymentKey}\nNombre: ${info.paymentAccountName}\n${info.paymentInstruction}`;
+    };
+
+    const escapeCsv = (value) => {
+        const text = value === null || value === undefined ? '' : String(value);
+        return /[\",\n]/.test(text) ? `\"${text.replace(/\"/g, '\"')}\"` : text;
+    };
+
+    const downloadTextFile = (filename, content, type = 'text/plain;charset=utf-8') => {
+        const blob = new Blob([content], { type });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
+
+    const buildPaymentMessage = ({ client, loan, installment, paymentInfo, includeGreeting = true }) => {
+        const pending = getInstallmentPendingAmount(installment);
+        const mora = MoraEngine.calculateMoraRemaining(installment);
+        const total = normalizeMoney(pending + mora);
+        const greeting = includeGreeting ? 'Hola' : '';
+        return `${greeting}${greeting ? ' ' : ''}${client?.fullName || 'cliente'},\n\nTe recordamos tu próxima cuota de LOANS W:\n\nPréstamo: #${loan?.loanNumber || 'N/A'}\nCuota: ${installment?.number || 'N/A'}\nFecha de vencimiento: ${formatDate(installment?.dueDate)}\nValor de la cuota: ${formatCurrency(installment?.totalAmount || 0)}\nAbonado: ${formatCurrency(installment?.paidAmount || 0)}\nSaldo pendiente: ${formatCurrency(pending)}${mora > 0 ? `\nMora: ${formatCurrency(mora)}` : ''}\nTotal a pagar: ${formatCurrency(total)}\n\nDatos para realizar el pago:\n${paymentInfoText(paymentInfo)}\n\nSi ya realizaste el pago, por favor envíanos el comprobante. Gracias.`;
+    };
+
+    const buildClientStatementRows = (clientId, clients, loans, installments, payments) => {
+        const clientLoans = (loans || []).filter(l => l.clientId === clientId);
+        const loanIds = new Set(clientLoans.map(l => l.id));
+        const clientInsts = (installments || []).filter(i => loanIds.has(i.loanId));
+        const activePays = (payments || []).filter(p => loanIds.has(p.loanId));
+        return clientInsts.map(i => {
+            const loan = clientLoans.find(l => l.id === i.loanId);
+            return {
+                cliente: (clients || []).find(c => c.id === clientId)?.fullName || 'Cliente',
+                prestamo: loan?.loanNumber || '', cuota: i.number, vencimiento: i.dueDate,
+                valor: normalizeMoney(i.totalAmount || 0), abonado: normalizeMoney(i.paidAmount || 0),
+                pendiente: getInstallmentPendingAmount(i), estado: getStatusLabel(i.status),
+                mora: MoraEngine.calculateMoraRemaining(i), pagos: activePays.filter(p => p.installmentId === i.id).length
+            };
+        });
+    };
+
+    const buildCsv = (headers, rows) => [headers.map(escapeCsv).join(','), ...rows.map(row => headers.map(h => escapeCsv(row[h])).join(','))].join('\n');
+
     const MONETARY_CONFIG = {
         useDecimals: false,
         decimalPlaces: 0,
@@ -680,6 +748,7 @@
         DollarSign: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>,
         Calendar: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>,
         Clock: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
+        Upload: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>,
         Download: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>,
         LogOut: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>,
         Shield: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.06 1.06 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>,
@@ -1173,7 +1242,7 @@
         static calculateState(lostDebts, recoveryMovements, lossCompensations) {
             const safeLost = Array.isArray(lostDebts) ? lostDebts : [];
             const safeRecoveries = Array.isArray(recoveryMovements) ? recoveryMovements : [];
-            const safeCompensations = Array.isArray(lossCompensations) ? lossCompensations : [];
+            const safeCompensations = (Array.isArray(lossCompensations) ? lossCompensations : []);
 
             const totalLostCapital = normalizeMoney(
                 safeLost.reduce((s, d) => s + normalizeMoney(d.lostCapital || 0), 0)
@@ -2811,6 +2880,7 @@
     // ============================================================
 
     const PaymentReceipt = ({ payment, onClose, onPrint, onShare }) => {
+        const { config } = useApp();
         if (!payment) return null;
 
         const handlePrint = () => {
@@ -2831,6 +2901,7 @@
                     `Mora: ${formatCurrency(payment.breakdown?.mora || 0)}\n\n` +
                     `Método: ${payment.method}\n` +
                     `Saldo pendiente: ${formatCurrency(payment.remainingBalance || 0)}\n\n` +
+                    `DATOS PARA REALIZAR PAGOS\n${paymentInfoText(config)}\n\n` +
                     `---\nLOANS W`;
 
                 if (navigator.share) {
@@ -2869,6 +2940,18 @@
                         <span style={{ color: 'var(--text-muted)' }}>Préstamo</span>
                         <span style={{ fontWeight: '500' }}>{payment.loanNumber}</span>
                     </div>
+                    {payment.installmentNumber && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
+                            <span style={{ color: 'var(--text-muted)' }}>Cuota</span>
+                            <span style={{ fontWeight: '800', fontSize: '18px', color: 'var(--accent-light)' }}>#{payment.installmentNumber}</span>
+                        </div>
+                    )}
+                    {payment.installmentNumber && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
+                            <span style={{ color: 'var(--text-muted)' }}>Cuotas restantes</span>
+                            <span style={{ fontWeight: '800', fontSize: '19px', color: 'var(--accent-light)' }}>{payment.remainingInstallments ?? '—'}</span>
+                        </div>
+                    )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '13px' }}>
                         <span style={{ color: 'var(--text-muted)' }}>Fecha</span>
                         <span style={{ fontWeight: '500' }}>{formatDateTime(payment.paymentDate || payment.date)}</span>
@@ -2876,12 +2959,18 @@
 
                     <hr style={{ border: 'none', borderTop: '1px dashed var(--glass-border)', margin: '12px 0' }} />
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '13px' }}>
-                        <span style={{ color: 'var(--text-muted)' }}>Valor recibido</span>
-                        <span style={{ fontWeight: '700', color: 'var(--accent-light)', fontSize: '16px' }}>
-                            {formatCurrency(payment.amount || payment.receivedAmount)}
-                        </span>
-                    </div>
+                    {(() => { const info = getPaymentInfo(config); return (
+                        <div style={{ margin: '12px 0', padding: '16px', borderRadius: '14px', background: 'linear-gradient(135deg, rgba(99,102,241,0.16), rgba(16,185,129,0.12))', border: '2px solid rgba(99,102,241,0.45)', textAlign: 'center' }}>
+                            <div style={{ color: 'var(--text-muted)', fontSize: '13px', fontWeight: '700', textTransform: 'uppercase' }}>Valor recibido</div>
+                            <div style={{ fontWeight: '900', color: 'var(--accent-light)', fontSize: '28px', margin: '4px 0 12px' }}>{formatCurrency(payment.amount || payment.receivedAmount)}</div>
+                            <div style={{ borderTop: '1px solid rgba(148,163,184,0.35)', paddingTop: '10px', fontSize: '14px', lineHeight: '1.55' }}>
+                                <strong style={{ fontSize: '18px' }}>{info.paymentMethod}: {info.paymentAccountNumber}</strong><br />
+                                <strong style={{ fontSize: '17px' }}>Llave: {info.paymentKey}</strong><br />
+                                <strong>{info.paymentAccountName}</strong><br />
+                                <span style={{ color: 'var(--warning-light)', fontWeight: '700' }}>{info.paymentInstruction}</span>
+                            </div>
+                        </div>
+                    ); })()}
 
                     <hr style={{ border: 'none', borderTop: '1px dashed var(--glass-border)', margin: '12px 0' }} />
 
@@ -2913,6 +3002,19 @@
                             </span>
                         </div>
                     )}
+
+                    {(() => { const info = getPaymentInfo(config); return (
+                        <div style={{ marginTop: '16px', padding: '16px', background: 'linear-gradient(135deg, rgba(99,102,241,0.18), rgba(16,185,129,0.10))', border: '2px solid rgba(99,102,241,0.45)', borderRadius: '14px' }}>
+                            <div style={{ fontSize: '15px', fontWeight: '800', color: 'var(--accent-light)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Datos para realizar pagos</div>
+                            <div style={{ display: 'grid', gap: '7px', fontSize: '14px', lineHeight: '1.45' }}>
+                                <div><span style={{ color: 'var(--text-muted)' }}>Método: </span><strong style={{ fontSize: '17px' }}>{info.paymentMethod}</strong></div>
+                                <div><span style={{ color: 'var(--text-muted)' }}>Número: </span><strong style={{ fontSize: '20px', letterSpacing: '0.04em' }}>{info.paymentAccountNumber}</strong></div>
+                                <div><span style={{ color: 'var(--text-muted)' }}>Llave: </span><strong style={{ fontSize: '20px', letterSpacing: '0.04em' }}>{info.paymentKey}</strong></div>
+                                <div><span style={{ color: 'var(--text-muted)' }}>Titular: </span><strong style={{ fontSize: '16px' }}>{info.paymentAccountName}</strong></div>
+                            </div>
+                            <div style={{ marginTop: '11px', paddingTop: '9px', borderTop: '1px solid rgba(148,163,184,0.3)', fontSize: '14px', fontWeight: '700', color: 'var(--warning-light)' }}>{info.paymentInstruction}</div>
+                        </div>
+                    ); })()}
                 </div>
 
                 <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
@@ -2940,10 +3042,10 @@
         const [generating, setGenerating] = useState(true);
         const [error, setError] = useState(null);
         const [canShareFiles, setCanShareFiles] = useState(false);
-        const { addToast } = useApp();
+        const { addToast, config } = useApp();
 
         const W = 1080;
-        const H = 1350;
+        const H = 1500;
 
         const drawRoundedRect = (ctx, x, y, w, h, r) => {
             ctx.beginPath();
@@ -3003,9 +3105,11 @@
         const drawCollectionReceipt = (ctx) => {
             const {
                 clientName, loanNumber, installmentNumber,
+                remainingInstallments,
                 totalAmount, paidAmount, remainingAmount,
                 moraRemaining, dueDate, daysLate, generatedAt, lenderName
             } = payload;
+            const accountInfo = getPaymentInfo(config);
 
             ctx.fillStyle = '#f8fafc';
             ctx.fillRect(0, 0, W, H);
@@ -3059,7 +3163,7 @@
             boxGrad.addColorStop(0, 'rgba(99,102,241,0.10)');
             boxGrad.addColorStop(1, 'rgba(99,102,241,0.02)');
             ctx.fillStyle = boxGrad;
-            drawRoundedRect(ctx, 130, nameY + 30, 820, 200, 28);
+            drawRoundedRect(ctx, 130, nameY + 30, 820, 315, 28);
             ctx.fill();
             ctx.strokeStyle = 'rgba(99,102,241,0.25)';
             ctx.lineWidth = 2;
@@ -3073,12 +3177,23 @@
             ctx.fillStyle = '#6366f1';
             ctx.font = '800 86px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
             ctx.fillText(formatMoneyCanvas(valorPendiente), W / 2, nameY + 185);
+            ctx.fillStyle = '#4338ca';
+            ctx.font = '800 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText('PAGA A: ' + accountInfo.paymentMethod + ' ' + accountInfo.paymentAccountNumber, W / 2, nameY + 235);
+            ctx.fillStyle = '#0f172a';
+            ctx.font = '700 21px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText('Llave: ' + accountInfo.paymentKey + ' · ' + accountInfo.paymentAccountName, W / 2, nameY + 270);
+            ctx.fillStyle = '#b45309';
+            ctx.font = '700 18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText(accountInfo.paymentInstruction, W / 2, nameY + 305);
 
-            let y = nameY + 320;
+            let y = nameY + 430;
 
             drawRow(ctx, 'Préstamo', `#${loanNumber || 'N/A'}`, y);
             y += 62;
             drawRow(ctx, 'Cuota', `#${installmentNumber}`, y);
+            y += 62;
+            drawRow(ctx, 'Cuotas restantes', String(remainingInstallments ?? '—'), y, { valueColor: '#6366f1', valueSize: 30 });
             y += 62;
             drawRow(ctx, 'Valor original', formatMoneyCanvas(totalAmount), y, { valueColor: '#475569' });
 
@@ -3120,12 +3235,12 @@
 
             ctx.fillStyle = '#94a3b8';
             ctx.font = '500 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-            ctx.fillText(`Generado el ${formatDate(generatedAt)}`, W / 2, 1250);
+            ctx.fillText(`Generado el ${formatDate(generatedAt)}`, W / 2, 1435);
 
             if (lenderName) {
                 ctx.font = '600 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
                 ctx.fillStyle = '#64748b';
-                ctx.fillText(lenderName, W / 2, 1290);
+                ctx.fillText(lenderName, W / 2, 1470);
             }
 
             ctx.fillStyle = '#6366f1';
@@ -3134,11 +3249,12 @@
 
         const drawPaymentReceipt = (ctx) => {
             const {
-                clientName, loanNumber, installmentNumber, receiptNumber,
+                clientName, loanNumber, installmentNumber, remainingInstallments, receiptNumber,
                 paymentDate, amount, method, breakdown,
                 remainingAfterInstallment, remainingAfterLoan,
                 isFullInstallmentPayment, isFullLoanPayment, lenderName
             } = payload;
+            const accountInfo = getPaymentInfo(config);
 
             ctx.fillStyle = '#f8fafc';
             ctx.fillRect(0, 0, W, H);
@@ -3206,7 +3322,7 @@
             boxGrad.addColorStop(0, 'rgba(16,185,129,0.10)');
             boxGrad.addColorStop(1, 'rgba(16,185,129,0.02)');
             ctx.fillStyle = boxGrad;
-            drawRoundedRect(ctx, 130, 550, 820, 200, 28);
+            drawRoundedRect(ctx, 130, 550, 820, 315, 28);
             ctx.fill();
             ctx.strokeStyle = 'rgba(16,185,129,0.25)';
             ctx.lineWidth = 2;
@@ -3220,8 +3336,17 @@
             ctx.fillStyle = '#10b981';
             ctx.font = '800 86px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
             ctx.fillText(formatMoneyCanvas(amount), W / 2, 705);
+            ctx.fillStyle = '#047857';
+            ctx.font = '800 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText('PAGA A: ' + accountInfo.paymentMethod + ' ' + accountInfo.paymentAccountNumber, W / 2, 755);
+            ctx.fillStyle = '#0f172a';
+            ctx.font = '700 21px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText('Llave: ' + accountInfo.paymentKey + ' · ' + accountInfo.paymentAccountName, W / 2, 790);
+            ctx.fillStyle = '#b45309';
+            ctx.font = '700 18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.fillText(accountInfo.paymentInstruction, W / 2, 825);
 
-            let y = 830;
+            let y = 905;
 
             drawRow(ctx, 'Cliente', clientName || 'Cliente', y, { valueSize: 26 });
             y += 58;
@@ -3229,6 +3354,8 @@
             if (installmentNumber) {
                 y += 58;
                 drawRow(ctx, 'Cuota', `#${installmentNumber}`, y);
+                y += 58;
+                drawRow(ctx, 'Cuotas restantes', String(remainingInstallments ?? '—'), y, { valueColor: '#6366f1', valueSize: 30 });
             }
             y += 58;
             drawRow(ctx, 'Fecha', formatDateTime(paymentDate), y, { valueSize: 22 });
@@ -3270,12 +3397,11 @@
                 });
             }
 
-            ctx.textAlign = 'center';
             ctx.fillStyle = '#475569';
             ctx.font = '400 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
             const msg = 'Gracias por tu pago. Conserva este comprobante como soporte de tu transacción.';
             const msgLines = wrapText(ctx, msg, 820);
-            let msgY = 1210;
+            let msgY = 1370;
             for (const line of msgLines) {
                 ctx.fillText(line, W / 2, msgY);
                 msgY += 34;
@@ -3284,7 +3410,7 @@
             if (lenderName) {
                 ctx.font = '600 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
                 ctx.fillStyle = '#64748b';
-                ctx.fillText(lenderName, W / 2, 1300);
+                ctx.fillText(lenderName, W / 2, 1470);
             }
 
             ctx.fillStyle = '#10b981';
@@ -3509,6 +3635,7 @@
             clientName: client?.fullName || 'Cliente',
             loanNumber: loan?.loanNumber || 'N/A',
             installmentNumber: installment.number,
+            remainingInstallments: Math.max(0, normalizeMoney(loan?.installmentsCount || installment.number) - installment.number + (installment.status === 'paid' ? 0 : 1)),
             totalAmount: normalizeMoney(installment.totalAmount || 0),
             paidAmount: normalizeMoney(installment.paidAmount || 0),
             remainingAmount: normalizeMoney(installment.remainingAmount || installment.totalAmount || 0),
@@ -3520,7 +3647,7 @@
         };
     };
 
-    const buildPaymentPayload = ({ payment, loan, client, installment }) => {
+    const buildPaymentPayload = ({ payment, loan, client, installment, allInstallments = [] }) => {
         const remainingAfterInstallment = installment
             ? normalizeMoney(installment.remainingAmount || 0)
             : null;
@@ -3536,11 +3663,16 @@
         const isFullLoanPayment = loan
             ? (loan.status === 'finished' || normalizeMoney(remainingAfterLoan) <= 0.01)
             : false;
+        const scheduledInstallments = normalizeMoney(loan?.installmentsCount || allInstallments.length || installment?.number || 0);
+        const remainingInstallments = installment
+            ? Math.max(0, scheduledInstallments - installment.number + (isFullInstallmentPayment ? 0 : 1))
+            : scheduledInstallments;
 
         return {
             clientName: client?.fullName || 'Cliente',
             loanNumber: loan?.loanNumber || 'N/A',
             installmentNumber: installment?.number || null,
+            remainingInstallments,
             receiptNumber: payment.receiptNumber || `REC-${payment.id || Date.now()}`,
             paymentDate: payment.paymentDate || payment.createdAt,
             amount: normalizeMoney(payment.amount || 0),
@@ -3672,7 +3804,7 @@
     // ============================================================
 
     const CobrarModal = ({
-        isOpen, onClose, installment, loan, client, user,
+        isOpen, onClose, installment, loan, client, user, allInstallments = [],
         onSuccess, onError
     }) => {
         const { refreshAllData, addToast } = useApp();
@@ -4183,7 +4315,8 @@
                                     ...result,
                                     clientName: client?.fullName,
                                     loanNumber: loan?.loanNumber,
-                                    remainingBalance: result.after?.total || 0
+                                    remainingBalance: result.after?.total || 0,
+                                    remainingInstallments: Math.max(0, normalizeMoney(loan?.installmentsCount || allInstallments.length) - installment.number)
                                 }}
                                 onClose={onClose}
                             />
@@ -4211,7 +4344,8 @@
                                     number: installment.number,
                                     remainingAmount: result.after?.total || 0,
                                     status: result.isFullPayment ? 'paid' : 'partial'
-                                }
+                                },
+                                allInstallments
                             })}
                             onClose={() => setShowPng(false)}
                         />
@@ -4870,7 +5004,8 @@
                                 },
                                 loan: loan,
                                 client: client,
-                                installment: installment
+                                installment: installment,
+                                allInstallments
                             })}
                             onClose={() => setShowPng(false)}
                         />
@@ -7989,6 +8124,15 @@
     // 19.6 COMPONENT: LOAN DETAIL PAGE
     // ============================================================
 
+    const PaymentMessageModal = ({ installment, loan, client, onClose }) => {
+        const [copied, setCopied] = useState(false);
+        const { config } = useApp();
+        if (!installment || !loan) return null;
+        const message = buildPaymentMessage({ installment, loan, client, paymentInfo: config });
+        const copy = async () => { try { await navigator.clipboard.writeText(message); setCopied(true); } catch { setCopied(false); } };
+        return <div className="modal-overlay" onClick={onClose}><div className="modal-content" onClick={e => e.stopPropagation()}><div className="flex-between" style={{ marginBottom: '12px' }}><div style={{ fontSize: '18px', fontWeight: '700' }}>Mensaje de cobro</div><button className="btn btn-ghost btn-sm" onClick={onClose}><IconSVG.X /></button></div><div className="explain-box">El mensaje no se envía automáticamente. Cópialo y envíalo manualmente al cliente.</div><textarea className="notes-textarea" value={message} readOnly style={{ minHeight: '250px', marginTop: '12px' }} /><div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}><button className="btn btn-primary" style={{ flex: 1 }} onClick={copy}><IconSVG.Copy /> {copied ? 'Copiado' : 'Copiar mensaje'}</button><button className="btn btn-ghost" onClick={onClose}>Cerrar</button></div></div></div>;
+    };
+
     const LoanDetailPage = ({ id, onNavigate, onBack, focusInstallmentId = null }) => {
         const { loans, clients, installments, payments, lostDebts, recoveryMovements, lossCompensations, refreshAllData, addToast, user } = useApp();
         const loan = (loans || []).find(l => l && l.id === parseInt(id));
@@ -8006,6 +8150,7 @@
         const [deleting, setDeleting] = useState(false);
         const [collectionPngTarget, setCollectionPngTarget] = useState(null);
         const [paymentPngTarget, setPaymentPngTarget] = useState(null);
+        const [messageInstallment, setMessageInstallment] = useState(null);
 
         const lostDebt = (lostDebts || []).find(d => loan && d.loanId === loan.id);
 
@@ -8459,6 +8604,11 @@
                                                 }}>
                                                 Abonar
                                             </button>
+                                            <button className="btn btn-ghost btn-sm" onClick={() => setMessageInstallment(inst)}
+                                                style={{ padding: '6px 12px', fontSize: '11px', minHeight: 'auto', borderColor: 'var(--accent)', color: 'var(--accent-light)' }}
+                                                title="Generar mensaje manual de cobro">
+                                                <IconSVG.Copy /> Mensaje
+                                            </button>
                                             <button className="btn btn-ghost btn-sm" onClick={() => openCollectionPng(inst)}
                                                 style={{
                                                     padding: '6px 12px', fontSize: '11px', minHeight: 'auto',
@@ -8493,6 +8643,8 @@
                     </div>
                 )}
 
+                {messageInstallment && <PaymentMessageModal installment={messageInstallment} loan={loan} client={client} onClose={() => setMessageInstallment(null)} />}
+
                 <CobrarModal
                     isOpen={showCobrarModal}
                     onClose={closeCobrarModal}
@@ -8500,6 +8652,7 @@
                     loan={loan}
                     client={client}
                     user={user}
+                    allInstallments={insts}
                     onSuccess={handleCobroSuccess}
                     onError={(err) => addToast('Error: ' + err.message, 'error')}
                 />
@@ -8560,7 +8713,7 @@
                         onSuccess={() => {
                             setDeletingPayment(null);
                             refreshAllData();
-                            addToast('Pago eliminado correctamente', 'success');
+                            addToast('Pago revertido y conservado en el historial', 'success');
                         }}
                         onError={(err) => addToast('Error: ' + err.message, 'error')}
                     />
@@ -8580,7 +8733,8 @@
                                     ...viewingReceipt,
                                     clientName: client?.fullName,
                                     loanNumber: loan?.loanNumber,
-                                    remainingBalance: loan?.currentBalance || 0
+                                    remainingBalance: loan?.currentBalance || 0,
+                                    remainingInstallments: (() => { const current = insts.find(i => i.id === viewingReceipt.installmentId); const total = normalizeMoney(loan?.installmentsCount || insts.length); return current ? Math.max(0, total - current.number + (current.status === 'paid' ? 0 : 1)) : null; })()
                                 }}
                                 onClose={() => setViewingReceipt(null)}
                             />
@@ -8607,7 +8761,8 @@
                             payment: paymentPngTarget,
                             loan: loan,
                             client: client,
-                            installment: insts.find(i => i.id === paymentPngTarget.installmentId)
+                            installment: insts.find(i => i.id === paymentPngTarget.installmentId),
+                            allInstallments: insts
                         })}
                         onClose={() => setPaymentPngTarget(null)}
                     />
@@ -9740,7 +9895,8 @@
         const [lp, setLp] = useState({
             defaultInterestRate: initialConfig?.defaultInterestRate || 20,
             defaultFrequency: initialConfig?.defaultFrequency || 'monthly',
-            defaultInstallments: initialConfig?.defaultInstallments || 5
+            defaultInstallments: initialConfig?.defaultInstallments || 5,
+            ...getPaymentInfo(initialConfig || {})
         });
 
         const handleSave = async () => {
@@ -9785,6 +9941,20 @@
                         <input type="number" value={lp.defaultInstallments}
                             onChange={e => setLp({ ...lp, defaultInstallments: parseInt(e.target.value) || 1 })}
                             className="glass-input" min="1" max="120" />
+                    </div>
+                    <div style={{ marginTop: '8px', paddingTop: '14px', borderTop: '1px solid var(--glass-border)' }}>
+                        <div style={{ fontSize: '14px', fontWeight: '700', marginBottom: '4px' }}>Cuenta para pagos</div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '12px' }}>Estos datos aparecerán en los recibos y mensajes de cobro.</div>
+                        <label style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Método de pago</label>
+                        <input type="text" value={lp.paymentMethod} onChange={e => setLp({ ...lp, paymentMethod: e.target.value })} className="glass-input" placeholder="Ej: Nequi" />
+                        <label style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '8px', display: 'block' }}>Número de cuenta</label>
+                        <input type="text" value={lp.paymentAccountNumber} onChange={e => setLp({ ...lp, paymentAccountNumber: e.target.value })} className="glass-input" placeholder="Número de Nequi" />
+                        <label style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '8px', display: 'block' }}>Llave</label>
+                        <input type="text" value={lp.paymentKey} onChange={e => setLp({ ...lp, paymentKey: e.target.value })} className="glass-input" placeholder="Llave de pago" />
+                        <label style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '8px', display: 'block' }}>Nombre que aparece en la cuenta</label>
+                        <input type="text" value={lp.paymentAccountName} onChange={e => setLp({ ...lp, paymentAccountName: e.target.value })} className="glass-input" placeholder="Nombre del titular" />
+                        <label style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '8px', display: 'block' }}>Instrucción para el cliente</label>
+                        <textarea value={lp.paymentInstruction} onChange={e => setLp({ ...lp, paymentInstruction: e.target.value })} className="notes-textarea" rows="3" placeholder="Ej: Mandar captura de la transferencia" />
                     </div>
                     <button className="btn btn-primary" style={{ width: '100%', marginTop: '8px' }} onClick={handleSave}>
                         <IconSVG.Check /> Guardar preferencias
@@ -11238,6 +11408,142 @@
         );
     };
 
+    const BACKUP_TABLES = ['users', 'clients', 'loans', 'installments', 'payments', 'capitalMovements', 'expenses', 'expenseCategories', 'settings', 'auditLog', 'collectionPeriods', 'simulations', 'notes', 'lostDebts', 'recoveryMovements', 'lossCompensations'];
+
+    const BackupService = {
+        async exportUserBackup(userId) {
+            await initDatabase();
+            const userLoans = await db.loans.where({ userId }).toArray();
+            const loanIds = new Set(userLoans.map(l => l.id));
+            const scoped = {
+                users: (await db.users.get(userId)) ? [await db.users.get(userId)] : [],
+                clients: await db.clients.where({ userId }).toArray(),
+                loans: userLoans,
+                installments: (await db.installments.toArray()).filter(i => loanIds.has(i.loanId)),
+                payments: (await db.payments.toArray()).filter(p => loanIds.has(p.loanId)),
+                capitalMovements: await db.capitalMovements.where({ userId }).toArray(),
+                expenses: await db.expenses.where({ userId }).toArray(),
+                expenseCategories: await db.expenseCategories.toArray(),
+                settings: [await db.settings.get(userId)].filter(Boolean),
+                auditLog: await db.auditLog.where({ userId }).toArray(),
+                collectionPeriods: await db.collectionPeriods.where({ userId }).toArray(),
+                simulations: await db.simulations.where({ userId }).toArray(),
+                notes: await db.notes.where({ userId }).toArray(),
+                lostDebts: await db.lostDebts.where({ userId }).toArray(),
+                recoveryMovements: await db.recoveryMovements.where({ userId }).toArray(),
+                lossCompensations: await db.lossCompensations.where({ userId }).toArray()
+            };
+            return { schema: 'loansw-local-backup-v2', dbName: DB_NAME, dbVersion: DB_VERSION, exportDate: new Date().toISOString(), userId, tables: scoped };
+        },
+        validate(data) {
+            if (!data || data.schema !== 'loansw-local-backup-v2' || !data.tables || typeof data.tables !== 'object') throw new Error('El archivo no es un respaldo LOANS W válido.');
+            if (!Array.isArray(data.tables.clients) || !Array.isArray(data.tables.loans) || !Array.isArray(data.tables.payments) || !Array.isArray(data.tables.installments)) throw new Error('El respaldo está incompleto.');
+            return true;
+        },
+        async restoreMerge(data, userId) {
+            this.validate(data);
+            await initDatabase();
+            const counts = {};
+            const allowedLoans = new Set((data.tables.loans || []).filter(l => l.userId === userId).map(l => l.id));
+            const allowedClients = new Set((data.tables.clients || []).filter(c => c.userId === userId).map(c => c.id));
+            await db.transaction('rw', ...BACKUP_TABLES.filter(n => db[n]), async () => {
+                for (const name of BACKUP_TABLES) {
+                    const rows = Array.isArray(data.tables[name]) ? data.tables[name] : [];
+                    if (!rows.length || !db[name]) continue;
+                    const existing = new Set(await db[name].toCollection().primaryKeys());
+                    const safeRows = rows.filter(row => {
+                        if (name !== 'expenseCategories' && name !== 'settings' && name !== 'users' && row.userId !== userId) {
+                            if (!['installments','payments'].includes(name)) return false;
+                        }
+                        if (name === 'installments' && !allowedLoans.has(row.loanId)) return false;
+                        if (name === 'payments' && !allowedLoans.has(row.loanId)) return false;
+                        if (name === 'clients' && !allowedClients.has(row.id)) return false;
+                        return row.id === undefined || !existing.has(row.id);
+                    });
+                    if (safeRows.length) { await db[name].bulkAdd(safeRows); counts[name] = safeRows.length; }
+                }
+            });
+            return counts;
+        }
+    };
+
+    const buildReportSnapshot = ({ clients = [], loans = [], installments = [], payments = [] }) => {
+        const today = todayLocal();
+        const activeLoans = (loans || []).filter(l => l && l.status !== 'cancelled' && l.status !== 'lost');
+        const loanById = new Map(activeLoans.map(l => [l.id, l]));
+        const clientById = new Map((clients || []).map(c => [c.id, c]));
+        const pendingItems = (installments || []).filter(i => loanById.has(i.loanId) && getInstallmentPendingAmount(i) > 0).map(i => {
+            const loan = loanById.get(i.loanId);
+            const client = clientById.get(loan.clientId);
+            const due = parseLocalDate(i.dueDate);
+            const daysUntil = getCalendarDaysDiff(today, due);
+            const daysLate = daysUntil < 0 ? Math.abs(daysUntil) : 0;
+            const pending = getInstallmentPendingAmount(i);
+            const mora = normalizeMoney(MoraEngine.calculateMoraRemaining(i));
+            const totalDue = normalizeMoney(pending + mora);
+            const bucket = daysLate > 60 ? 'Más de 60 días' : daysLate > 30 ? '31–60 días' : daysLate > 7 ? '8–30 días' : daysLate > 0 ? '1–7 días' : daysUntil <= 7 ? 'Vence pronto' : 'Al día';
+            return { ...i, _loan: loan, _client: client, _daysUntil: daysUntil, _daysLate: daysLate, _pending: pending, _mora: mora, _totalDue: totalDue, _bucket: bucket };
+        });
+        const overdueItems = pendingItems.filter(i => i._daysLate > 0).sort((a,b) => b._daysLate - a._daysLate || b._totalDue - a._totalDue);
+        const dueSoonItems = pendingItems.filter(i => i._daysUntil >= 0 && i._daysUntil <= 7).sort((a,b) => a._daysUntil - b._daysUntil || b._totalDue - a._totalDue);
+        const buckets = ['Al día','Vence pronto','1–7 días','8–30 días','31–60 días','Más de 60 días'].map(label => {
+            const items = pendingItems.filter(i => i._bucket === label);
+            return { label, count: items.length, amount: normalizeMoney(items.reduce((sum,i) => sum + i._totalDue, 0)) };
+        });
+        const year = today.getUTCFullYear(), month = today.getUTCMonth();
+        const collectedThisMonth = normalizeMoney((payments || []).filter(p => { const d = new Date(p.paymentDate || p.createdAt); return !isNaN(d.getTime()) && d.getUTCFullYear() === year && d.getUTCMonth() === month; }).reduce((sum,p) => sum + normalizeMoney(p.amount || 0), 0));
+        const scheduledThisMonth = normalizeMoney((installments || []).filter(i => isInstallmentInMonth(i, year, month + 1) && i.status !== 'cancelled').reduce((sum,i) => sum + normalizeMoney(i.totalAmount || 0), 0));
+        return {
+            generatedAt: new Date().toISOString(), periodLabel: `${getMonthName(month + 1)} ${year}`,
+            pendingTotal: normalizeMoney(pendingItems.reduce((sum,i) => sum + i._totalDue, 0)),
+            overdueTotal: normalizeMoney(overdueItems.reduce((sum,i) => sum + i._totalDue, 0)),
+            collectedThisMonth, scheduledThisMonth,
+            activeLoanCount: activeLoans.length, pendingCount: pendingItems.length,
+            overdueCount: overdueItems.length, dueSoonCount: dueSoonItems.length,
+            buckets, overdueItems, dueSoonItems, pendingItems
+        };
+    };
+
+    const ReportService = {
+        downloadPaymentsCsv(payments, clients, loans, installments) {
+            const rows = (payments || []).map(p => {
+                const client = (clients || []).find(c => c.id === p.clientId);
+                const loan = (loans || []).find(l => l.id === p.loanId);
+                const inst = (installments || []).find(i => i.id === p.installmentId);
+                return { fecha: formatDateTime(p.paymentDate || p.createdAt), cliente: client?.fullName || '', prestamo: loan?.loanNumber || '', cuota: inst?.number || '', monto: p.amount || 0, capital: p.breakdown?.capital || 0, intereses: p.breakdown?.interest || 0, mora: p.breakdown?.mora || 0, metodo: p.method || '', comprobante: p.receiptNumber || '' };
+            });
+            downloadTextFile(`loansw-pagos-${formatDateLocal(todayLocal())}.csv`, '\ufeff' + buildCsv(['fecha','cliente','prestamo','cuota','monto','capital','intereses','mora','metodo','comprobante'], rows), 'text/csv;charset=utf-8');
+        },
+        downloadPortfolioCsv(data) {
+            const snap = buildReportSnapshot(data);
+            const byLoan = new Map();
+            snap.pendingItems.forEach(i => {
+                const current = byLoan.get(i.loanId) || { cuotas_pendientes: 0, saldo_pendiente: 0, mora: 0, total_vencido: 0, mayor_mora_dias: 0, proximo_vencimiento: '' };
+                current.cuotas_pendientes += 1;
+                current.saldo_pendiente += i._pending;
+                current.mora += i._mora;
+                current.total_vencido += i._totalDue;
+                current.mayor_mora_dias = Math.max(current.mayor_mora_dias, i._daysLate);
+                if (!current.proximo_vencimiento || (i.dueDate && i.dueDate < current.proximo_vencimiento)) current.proximo_vencimiento = i.dueDate || '';
+                byLoan.set(i.loanId, current);
+            });
+            const rows = (data.loans || []).filter(l => l.status !== 'cancelled').map(l => {
+                const c = (data.clients || []).find(x => x.id === l.clientId);
+                const x = byLoan.get(l.id) || { cuotas_pendientes: 0, saldo_pendiente: 0, mora: 0, total_vencido: 0, mayor_mora_dias: 0, proximo_vencimiento: '' };
+                return { cliente: c?.fullName || 'Cliente', prestamo: l.loanNumber || '', cuotas_pendientes: x.cuotas_pendientes, saldo_pendiente: normalizeMoney(x.saldo_pendiente), mora: normalizeMoney(x.mora), total_vencido: normalizeMoney(x.total_vencido), mayor_mora_dias: x.mayor_mora_dias, proximo_vencimiento: x.proximo_vencimiento ? formatDate(x.proximo_vencimiento) : '', estado: getStatusLabel(l.status) };
+            });
+            downloadTextFile(`loansw-cartera-${formatDateLocal(todayLocal())}.csv`, '\ufeff' + buildCsv(['cliente','prestamo','cuotas_pendientes','saldo_pendiente','mora','total_vencido','mayor_mora_dias','proximo_vencimiento','estado'], rows), 'text/csv;charset=utf-8');
+        },
+        printPortfolioReport(data) {
+            const snap = buildReportSnapshot(data);
+            const money = v => formatCurrency(v);
+            const bucketRows = snap.buckets.map(b => `<tr><td>${b.label}</td><td>${b.count}</td><td>${money(b.amount)}</td></tr>`).join('');
+            const overdueRows = snap.overdueItems.slice(0, 100).map(i => `<tr><td>${i._client?.fullName || 'Cliente'}</td><td>#${i._loan?.loanNumber || ''}</td><td>Cuota ${i.number}</td><td>${formatDate(i.dueDate)}</td><td>${i._daysLate} días</td><td>${money(i._totalDue)}</td></tr>`).join('');
+            const win=window.open('', '_blank'); if (!win) throw new Error('El navegador bloqueó la ventana de reporte.');
+            win.document.write(`<html><head><title>Reporte ejecutivo LOANS W</title><style>body{font-family:Arial;color:#111;padding:24px}h1{color:#4f46e5;margin-bottom:4px}h2{color:#334155;margin-top:28px}.meta{color:#64748b}.cards{display:flex;gap:10px;flex-wrap:wrap}.card{border:1px solid #ddd;border-radius:8px;padding:12px;min-width:150px}.value{font-size:20px;font-weight:700;margin-top:5px}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{padding:7px;border:1px solid #ddd;text-align:left;font-size:12px}th{background:#eef2ff}.danger{color:#b91c1c}.ok{color:#047857}</style></head><body><h1>LOANS W — Reporte ejecutivo de cartera</h1><div class="meta">Generado: ${formatDateTime(snap.generatedAt)} · Corte: ${formatDateTime(snap.generatedAt)} · Período de cobros: ${snap.periodLabel}</div><div class="cards"><div class="card">Saldo pendiente<div class="value">${money(snap.pendingTotal)}</div></div><div class="card">Saldo vencido<div class="value danger">${money(snap.overdueTotal)}</div></div><div class="card">Cobrado este mes<div class="value ok">${money(snap.collectedThisMonth)}</div></div><div class="card">Próximas cuotas<div class="value">${snap.dueSoonCount}</div></div></div><h2>Distribución de cartera</h2><table><thead><tr><th>Rango</th><th>Cuotas</th><th>Valor</th></tr></thead><tbody>${bucketRows}</tbody></table><h2>Prioridad de cobranza</h2><table><thead><tr><th>Cliente</th><th>Préstamo</th><th>Cuota</th><th>Vence</th><th>Mora</th><th>Total</th></tr></thead><tbody>${overdueRows || '<tr><td colspan="6">No hay cuotas vencidas.</td></tr>'}</tbody></table><p class="meta">Mostrando hasta 100 cuotas vencidas. Total de préstamos activos: ${snap.activeLoanCount}.</p><script>window.onload=()=>window.print();<\/script></body></html>`); win.document.close();
+        }
+    };
+
     // ============================================================
     // 32. COMPONENT: MORE PAGE
     // ============================================================
@@ -11249,32 +11555,26 @@
         const [showReset, setShowReset] = useState(false);
         const [resetStep, setResetStep] = useState(0);
         const [dbVersionInfo, setDbVersionInfo] = useState(null);
+        const [restoreInput, setRestoreInput] = useState(null);
 
         const handleExport = async () => {
             try {
-                await initDatabase();
-                const data = {
-                    clients: await db.clients.where({ userId: user.id }).toArray(),
-                    loans: await db.loans.where({ userId: user.id }).toArray(),
-                    installments: await db.installments.toArray(),
-                    payments: await db.payments.toArray(),
-                    expenses: await db.expenses.where({ userId: user.id }).toArray(),
-                    capitalMovements: await db.capitalMovements.where({ userId: user.id }).toArray(),
-                    notes: await db.notes.where({ userId: user.id }).toArray(),
-                    lostDebts: await db.lostDebts.where({ userId: user.id }).toArray(),
-                    recoveryMovements: await db.recoveryMovements.where({ userId: user.id }).toArray(),
-                    lossCompensations: await db.lossCompensations.where({ userId: user.id }).toArray(),
-                    exportDate: new Date().toISOString()
-                };
-                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = `loansw-backup-${new Date().toISOString().split('T')[0]}.json`;
-                a.click();
-                addToast('Respaldo exportado correctamente', 'success');
-            } catch {
-                addToast('Error al exportar', 'error');
-            }
+                const data = await BackupService.exportUserBackup(user.id);
+                downloadTextFile(`loansw-backup-${formatDateLocal(todayLocal())}.json`, JSON.stringify(data, null, 2), 'application/json;charset=utf-8');
+                addToast('Respaldo local exportado sin modificar registros', 'success');
+            } catch (err) { addToast('Error al exportar: ' + err.message, 'error'); }
+        };
+
+        const handleRestoreFile = async (event) => {
+            const file = event.target.files?.[0];
+            event.target.value = '';
+            if (!file) return;
+            try {
+                const data = JSON.parse(await file.text());
+                const counts = await BackupService.restoreMerge(data, user.id);
+                addToast(`Restauración segura completada: ${Object.values(counts).reduce((a,b)=>a+b,0)} registros nuevos. Los existentes no fueron sobrescritos.`, 'success');
+                window.location.reload();
+            } catch (err) { addToast('No se restauró el respaldo: ' + err.message, 'error'); }
         };
 
         const handleEmergencyReset = async () => {
@@ -11487,6 +11787,12 @@
                         </div>
                     </div>
 
+                    <label className="glass-card" style={{ padding: '16px', display: 'block', cursor: 'pointer' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><div style={{ color: 'var(--accent-light)' }}><IconSVG.Upload /></div><div><div style={{ fontSize: '14px', fontWeight: '500' }}>Restaurar respaldo local</div><div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Solo agrega registros que no existan; no sobrescribe ni borra</div></div></div><IconSVG.ArrowLeft /></div>
+                        <input type="file" accept="application/json,.json" onChange={handleRestoreFile} style={{ display: 'none' }} />
+                    </label>
+                    <div className="glass-card" style={{ padding: '16px' }} onClick={() => onNavigate('reports')}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><div style={{ color: 'var(--accent-light)' }}><IconSVG.FileText /></div><div><div style={{ fontSize: '14px', fontWeight: '500' }}>Reportes</div><div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Pagos, cartera y estado de cuenta</div></div></div><IconSVG.ArrowLeft /></div></div>
+
                     <div className="glass-card" style={{ padding: '16px', borderColor: 'rgba(239,68,68,0.2)' }}
                         onClick={() => { setShowReset(true); checkDbVersion(); }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -11655,6 +11961,27 @@
         );
     };
 
+    const ReportsPage = ({ onBack }) => {
+        const { clients, loans, installments, payments, loading } = useApp();
+        const snapshot = useMemo(() => buildReportSnapshot({ clients, loans, installments, payments }), [clients, loans, installments, payments]);
+        if (loading) return <LoadingScreen />;
+        const metricCards = [
+            { label: 'Saldo pendiente', value: snapshot.pendingTotal, color: 'var(--warning)' },
+            { label: 'Saldo vencido', value: snapshot.overdueTotal, color: 'var(--danger)' },
+            { label: 'Cobrado este mes', value: snapshot.collectedThisMonth, color: 'var(--success)' },
+            { label: 'Cuotas próximas', value: snapshot.dueSoonCount, color: 'var(--accent-light)', plain: true }
+        ];
+        return <div style={{ padding: '20px', paddingBottom: '120px' }}>
+            <button onClick={onBack} className="back-btn"><IconSVG.ArrowLeft /> Volver</button>
+            <div style={{ fontSize: '26px', fontWeight: '700', marginBottom: '3px' }}>Reporte ejecutivo</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '14px' }}>Corte: {formatDateTime(snapshot.generatedAt)} · Cobros de {snapshot.periodLabel}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '14px' }}>{metricCards.map(card => <div key={card.label} className="glass-card disabled" style={{ padding: '13px' }}><div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{card.label}</div><div style={{ fontSize: '19px', fontWeight: '800', color: card.color, marginTop: '5px' }}>{card.plain ? card.value : formatCurrency(card.value)}</div></div>)}</div>
+            <div className="glass-card disabled" style={{ padding: '15px', marginBottom: '12px' }}><div style={{ fontSize: '14px', fontWeight: '700', marginBottom: '10px' }}>Cartera por rango de mora</div>{snapshot.buckets.map(bucket => <div key={bucket.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: '12px' }}><span>{bucket.label} <span style={{ color: 'var(--text-muted)' }}>({bucket.count})</span></span><strong>{formatCurrency(bucket.amount)}</strong></div>)}</div>
+            <div className="glass-card disabled" style={{ padding: '15px', marginBottom: '12px' }}><div style={{ fontSize: '14px', fontWeight: '700', marginBottom: '4px' }}>Prioridad de cobranza</div><div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '10px' }}>{snapshot.overdueCount} cuotas vencidas · ordenadas por días de mora y valor.</div>{snapshot.overdueItems.slice(0, 30).map(item => <div key={item.id} style={{ padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}><div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}><strong style={{ fontSize: '12px' }}>{item._client?.fullName || 'Cliente'}</strong><strong style={{ color: 'var(--danger)', fontSize: '12px' }}>{formatCurrency(item._totalDue)}</strong></div><div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '3px' }}>#{item._loan?.loanNumber || ''} · Cuota {item.number} · {item._daysLate} días de mora · Vence {formatDate(item.dueDate)}</div></div>)}{snapshot.overdueItems.length === 0 && <div style={{ fontSize: '12px', color: 'var(--success)' }}>No hay cuotas vencidas.</div>}</div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}><button className="btn btn-success" onClick={() => ReportService.downloadPaymentsCsv(payments, clients, loans, installments)}><IconSVG.Download /> CSV pagos</button><button className="btn btn-ghost" onClick={() => ReportService.downloadPortfolioCsv({ clients, loans, installments })}><IconSVG.Download /> CSV cartera</button><button className="btn btn-primary" onClick={() => ReportService.printPortfolioReport({ clients, loans, installments, payments })}><IconSVG.Printer /> Guardar PDF</button></div>
+        </div>;
+    };
+
     // ============================================================
     // 33. APP PRINCIPAL
     // ============================================================
@@ -11730,7 +12057,7 @@
             setParams(a);
             setShowFab(!['createLoan', 'editLoan', 'loanDetail', 'clientDetail', 'more',
                 'expenses', 'simulator', 'notes', 'lostDebts', 'collectionProgress',
-                'moneyMap', 'intelligence', 'capitalContribution'].includes(p));
+                'moneyMap', 'intelligence', 'capitalContribution', 'reports'].includes(p));
 
             // Empujar entrada en el historial del navegador para que el gesto
             // de back de iOS/Android funcione coordinado.
@@ -11752,7 +12079,7 @@
             setParams(prev.params);
             setShowFab(!['createLoan', 'editLoan', 'loanDetail', 'clientDetail', 'more',
                 'expenses', 'simulator', 'notes', 'lostDebts', 'collectionProgress',
-                'moneyMap', 'intelligence', 'capitalContribution'].includes(prev.page));
+                'moneyMap', 'intelligence', 'capitalContribution', 'reports'].includes(prev.page));
 
             // Restaurar scroll de la pantalla destino (después del render)
             const targetKey = `${prev.page}-${JSON.stringify(prev.params)}`;
@@ -11813,6 +12140,7 @@
                     case 'simulator': return <SimulatorPage onNavigate={navigate} onBack={goBack} />;
                     case 'notes': return <NotesPage onNavigate={navigate} onBack={goBack} initialAction={notesInitialAction} clearInitialAction={() => setNotesInitialAction(null)} />;
                     case 'more': return <MorePage onNavigate={navigate} onBack={goBack} />;
+                    case 'reports': return <ReportsPage onBack={goBack} />;
                     case 'moneyMap': return <MoneyMapPage onNavigate={navigate} onBack={goBack} />;
                     case 'intelligence': return <IntelligencePage onNavigate={navigate} onBack={goBack} />;
                     case 'capitalContribution': return <CapitalContributionPage onNavigate={navigate} onBack={goBack} />;
@@ -11901,6 +12229,4 @@
 </script>
 </body>
 </html>
- 
-
   
